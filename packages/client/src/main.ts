@@ -250,13 +250,16 @@ function createChunkMesh(chunk: Chunk): void {
         if (!def?.solid) continue;
 
         // Check neighbors to only render exposed faces
-        const neighbors = [
+        const neighbors: [number, number, number][] = [
           [1, 0, 0], [-1, 0, 0],
           [0, 1, 0], [0, -1, 0],
           [0, 0, 1], [0, 0, -1],
         ];
 
-        for (const [dx, dy, dz] of neighbors) {
+        for (const neighbor of neighbors) {
+          const dx = neighbor[0];
+          const dy = neighbor[1];
+          const dz = neighbor[2];
           const nx = x + dx;
           const ny = y + dy;
           const nz = z + dz;
@@ -269,7 +272,7 @@ function createChunkMesh(chunk: Chunk): void {
           }
 
           if (!neighborSolid) {
-            addFace(positions, colors, worldX + x, worldY + y, worldZ + z, dx, dy, dz, blockColors[blockId] || 0xff00ff);
+            addFace(positions, colors, worldX + x, worldY + y, worldZ + z, dx, dy, dz, blockColors[blockId] ?? 0xff00ff);
           }
         }
       }
@@ -301,7 +304,7 @@ function addFace(
   const b = (color & 255) / 255;
 
   // Face vertices based on normal direction
-  let vertices: number[][];
+  let vertices: [number, number, number][];
 
   if (dx === 1) {
     vertices = [
