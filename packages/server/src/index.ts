@@ -4,23 +4,9 @@ import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import { DEFAULT_SERVER_PORT } from '@clawcraft/shared';
 import { GameServer } from './game-server';
-import { configureAuth } from './auth';
+import { startSignup, verifyPost, getVerifiedAgents, getPendingCount } from './auth';
 
 const PORT = Number(process.env.PORT) || DEFAULT_SERVER_PORT;
-
-// Configure authentication from environment
-configureAuth({
-  twitter: process.env.TWITTER_BEARER_TOKEN ? {
-    apiKey: process.env.TWITTER_API_KEY || '',
-    apiSecret: process.env.TWITTER_API_SECRET || '',
-    bearerToken: process.env.TWITTER_BEARER_TOKEN,
-  } : undefined,
-  moltbook: process.env.MOLTBOOK_API_URL ? {
-    apiUrl: process.env.MOLTBOOK_API_URL,
-    apiKey: process.env.MOLTBOOK_API_KEY,
-  } : undefined,
-  allowGuests: process.env.ALLOW_GUESTS !== 'false', // Default to true
-});
 
 // Express app for REST API
 const app = express();
@@ -57,6 +43,84 @@ app.post('/api/proposals/:id/vote', (req, res) => {
   const { agentId, vote, reason } = req.body;
   const result = gameServer.vote(req.params.id, agentId, vote, reason);
   res.json(result);
+});
+
+// ============================================================================
+// AUTH ENDPOINTS
+// ============================================================================
+
+/**
+ * Start signup - get verification code
+ * POST /api/auth/signup { username: "MyAgentName" }
+ * Returns: { id, code, expiresIn, instructions }
+ */
+app.post('/api/auth/signup', (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username) {
+      return res.status(400).json({ error: 'Username required' });
+    }
+
+    const result = startSignup(username);
+    
+    res.json({
+      ...result,
+      instructions: {
+        step1: `Post on Twitter or Moltbook with this exact code: ${result.code}`,
+        step2: 'Example tweet: "Joining ClawCraft! 🧱 Verify: ' + result.code + ' #ClawCraft"',
+        step3: 'Copy your post URL and call POST /api/auth/verify',
+      },
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * Complete verification with post URL
+ * POST /api/auth/verify { id, postUrl: "https://twitter.com/..." }
+ * Returns: { agent: VerifiedAgent }
+ */
+app.post('/api/auth/verify', async (req, res) => {
+  try {
+    const { id, postUrl } = req.body;
+    if (!id || !postUrl) {
+      return res.status(400).json({ error: 'id and postUrl required' });
+    }
+
+    const agent = await verifyPost(id, postUrl);
+    
+    res.json({
+      success: true,
+      agent,
+      message: `Welcome to ClawCraft, ${agent.username}! Connect with your username.`,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * Get verified agents list (public)
+ */
+app.get('/api/auth/verified', (req, res) => {
+  const agents = getVerifiedAgents().map(a => ({
+    username: a.username,
+    provider: a.provider,
+    socialHandle: a.socialHandle,
+    verifiedAt: a.verifiedAt,
+  }));
+  res.json({ agents, count: agents.length });
+});
+
+/**
+ * Auth stats
+ */
+app.get('/api/auth/stats', (req, res) => {
+  res.json({
+    verifiedAgents: getVerifiedAgents().length,
+    pendingVerifications: getPendingCount(),
+  });
 });
 
 // WebSocket handling

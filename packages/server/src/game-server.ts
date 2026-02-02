@@ -8,7 +8,7 @@ import {
   WALK_SPEED,
   BlockTypes,
 } from '@clawcraft/shared';
-import { authenticate, configureAuth, AuthResult } from './auth';
+import { authenticate } from './auth';
 import type {
   Agent,
   Vec3,
@@ -168,25 +168,23 @@ export class GameServer {
     console.log(`[Chat] ${agent.name}: ${text}`);
   }
 
-  private async handleAuth(client: ConnectedClient, token: string): Promise<void> {
+  private handleAuth(client: ConnectedClient, token: string): void {
     // Authenticate using the auth module
-    const authResult = await authenticate(token);
-    
-    if (!authResult.success) {
-      this.send(client.ws, { 
-        type: 'auth_error', 
-        reason: authResult.error || 'Authentication failed' 
-      });
-      console.log(`Auth failed for token: ${token.slice(0, 20)}... - ${authResult.error}`);
-      return;
-    }
+    const authResult = authenticate(token);
     
     const spawnPoint = this.world.findSpawnPoint();
+    const agentId = authResult.verified 
+      ? authResult.agent!.id 
+      : `guest:${uuid()}`;
+    const agentName = authResult.verified 
+      ? authResult.agent!.username 
+      : authResult.guestName!;
+    
     const agent: Agent = {
-      id: authResult.userId,
+      id: agentId,
       type: 'agent',
-      name: authResult.displayName,
-      moltbookId: authResult.provider !== 'guest' ? authResult.userId : undefined,
+      name: agentName,
+      moltbookId: authResult.verified ? authResult.agent!.id : undefined,
       position: spawnPoint,
       rotation: { x: 0, y: 0, z: 0 },
       velocity: { x: 0, y: 0, z: 0 },
@@ -223,7 +221,8 @@ export class GameServer {
     // Broadcast join event
     this.broadcast({ type: 'event', event: { type: 'agent_joined', agent } });
 
-    console.log(`Agent joined: ${agent.name} (${authResult.provider}) at ${JSON.stringify(agent.position)}`);
+    const badge = authResult.verified ? `✓ @${authResult.agent!.socialHandle}` : '(guest)';
+    console.log(`Agent joined: ${agent.name} ${badge}`);
   }
 
   private handleAction(agent: Agent, action: AgentAction): void {
