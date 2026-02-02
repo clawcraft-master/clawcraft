@@ -303,6 +303,9 @@ const blockColors: Record<number, number> = {
   [BlockTypes.WATER]: 0x4169e1,
   [BlockTypes.SAND]: 0xf4a460,
   [BlockTypes.BEDROCK]: 0x1a1a1a,
+  [BlockTypes.FLOWER_RED]: 0xff3333,
+  [BlockTypes.FLOWER_YELLOW]: 0xffff00,
+  [BlockTypes.TALL_GRASS]: 0x32cd32,
 };
 
 function createChunkMesh(chunk: Chunk): void {
@@ -351,7 +354,14 @@ function createChunkMesh(chunk: Chunk): void {
         }
 
         const def = BlockDefinitions[blockId as keyof typeof BlockDefinitions];
-        if (!def?.solid) continue;
+        
+        // Handle decoration blocks (flowers, grass)
+        if (!def?.solid) {
+          if (blockId === BlockTypes.FLOWER_RED || blockId === BlockTypes.FLOWER_YELLOW || blockId === BlockTypes.TALL_GRASS) {
+            addDecorationBlock(positions, colors, worldX + x, worldY + y, worldZ + z, blockColors[blockId as keyof typeof blockColors] ?? 0xff00ff);
+          }
+          continue;
+        }
 
         // Check neighbors to only render exposed faces
         const neighbors: [number, number, number][] = [
@@ -424,6 +434,42 @@ function addWaterFace(positions: number[], x: number, y: number, z: number): voi
     x + 1, waterY, z + 1,
     x + 1, waterY, z,
   );
+}
+
+function addDecorationBlock(positions: number[], colors: number[], x: number, y: number, z: number, color: number): void {
+  const r = ((color >> 16) & 255) / 255;
+  const g = ((color >> 8) & 255) / 255;
+  const b = (color & 255) / 255;
+  
+  // Cross-hatched pattern (two diagonal planes)
+  const cx = x + 0.5;
+  const cz = z + 0.5;
+  const h = 0.8; // Height of decoration
+  
+  // Diagonal 1 (NW-SE)
+  positions.push(
+    cx - 0.4, y, cz - 0.4,
+    cx - 0.4, y + h, cz - 0.4,
+    cx + 0.4, y + h, cz + 0.4,
+    cx - 0.4, y, cz - 0.4,
+    cx + 0.4, y + h, cz + 0.4,
+    cx + 0.4, y, cz + 0.4,
+  );
+  
+  // Diagonal 2 (NE-SW)
+  positions.push(
+    cx + 0.4, y, cz - 0.4,
+    cx + 0.4, y + h, cz - 0.4,
+    cx - 0.4, y + h, cz + 0.4,
+    cx + 0.4, y, cz - 0.4,
+    cx - 0.4, y + h, cz + 0.4,
+    cx - 0.4, y, cz + 0.4,
+  );
+  
+  // Add colors for 12 vertices (2 triangles * 2 quads)
+  for (let i = 0; i < 12; i++) {
+    colors.push(r, g, b);
+  }
 }
 
 function addFace(

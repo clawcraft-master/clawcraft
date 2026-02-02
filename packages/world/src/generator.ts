@@ -63,13 +63,127 @@ export class TerrainGenerator {
       }
     }
 
-    // Add trees occasionally
+    // Add spawn platform near origin
+    this.addSpawnPlatform(chunk, worldBaseX, worldBaseY, worldBaseZ);
+
+    // Add trees occasionally (but not on spawn platform)
     if (coord.cy >= 0 && coord.cy <= Math.ceil(this.config.baseHeight / CHUNK_SIZE) + 2) {
       this.addTrees(chunk, worldBaseX, worldBaseY, worldBaseZ);
+      this.addVegetation(chunk, worldBaseX, worldBaseY, worldBaseZ);
     }
 
     chunk.dirty = false; // Fresh chunk isn't dirty
     return chunk;
+  }
+  
+  private addVegetation(chunk: Chunk, worldBaseX: number, worldBaseY: number, worldBaseZ: number): void {
+    const vegetationNoise = new SimplexNoise(this.config.seed + 2000);
+    
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+      for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+        const worldX = worldBaseX + lx;
+        const worldZ = worldBaseZ + lz;
+        
+        // Skip spawn platform area
+        if (Math.abs(worldX) <= 10 && Math.abs(worldZ) <= 10) continue;
+        
+        const terrainHeight = this.getHeightAt(worldX, worldZ);
+        
+        // Only on grass blocks above water
+        if (terrainHeight <= this.config.seaLevel) continue;
+        
+        const vegetationY = terrainHeight + 1 - worldBaseY;
+        if (vegetationY < 0 || vegetationY >= CHUNK_SIZE) continue;
+        
+        // Check if there's grass below and air at this position
+        const groundY = terrainHeight - worldBaseY;
+        if (groundY < 0 || groundY >= CHUNK_SIZE) continue;
+        
+        const value = vegetationNoise.noise2D(worldX * 0.3, worldZ * 0.3);
+        
+        // Tall grass (common)
+        if (value > 0.2 && value < 0.6) {
+          setBlock(chunk, lx, vegetationY, lz, BlockTypes.TALL_GRASS);
+        }
+        // Flowers (rarer)
+        else if (value >= 0.6) {
+          const flowerType = value > 0.75 ? BlockTypes.FLOWER_RED : BlockTypes.FLOWER_YELLOW;
+          setBlock(chunk, lx, vegetationY, lz, flowerType);
+        }
+      }
+    }
+  }
+
+  private addSpawnPlatform(chunk: Chunk, worldBaseX: number, worldBaseY: number, worldBaseZ: number): void {
+    const spawnY = this.config.baseHeight;
+    const platformRadius = 8;
+    
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+      for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+        const worldX = worldBaseX + lx;
+        const worldZ = worldBaseZ + lz;
+        
+        // Distance from spawn center (0, 0)
+        const dist = Math.sqrt(worldX * worldX + worldZ * worldZ);
+        
+        if (dist <= platformRadius) {
+          for (let ly = 0; ly < CHUNK_SIZE; ly++) {
+            const worldY = worldBaseY + ly;
+            
+            // Platform floor
+            if (worldY === spawnY) {
+              // Checkerboard pattern with stone and dirt
+              const checker = (Math.abs(worldX) + Math.abs(worldZ)) % 2 === 0;
+              setBlock(chunk, lx, ly, lz, checker ? BlockTypes.STONE : BlockTypes.DIRT);
+            }
+            // Clear above platform
+            else if (worldY > spawnY && worldY < spawnY + 10) {
+              setBlock(chunk, lx, ly, lz, BlockTypes.AIR);
+            }
+          }
+        }
+      }
+    }
+    
+    // Add corner pillars and beacon
+    this.addSpawnStructure(chunk, worldBaseX, worldBaseY, worldBaseZ, spawnY);
+  }
+
+  private addSpawnStructure(chunk: Chunk, worldBaseX: number, worldBaseY: number, worldBaseZ: number, spawnY: number): void {
+    const pillarPositions = [
+      [-6, -6], [-6, 6], [6, -6], [6, 6]
+    ];
+    
+    for (const [px, pz] of pillarPositions) {
+      const lx = px - worldBaseX;
+      const lz = pz - worldBaseZ;
+      
+      if (lx >= 0 && lx < CHUNK_SIZE && lz >= 0 && lz < CHUNK_SIZE) {
+        for (let h = 1; h <= 4; h++) {
+          const ly = spawnY + h - worldBaseY;
+          if (ly >= 0 && ly < CHUNK_SIZE) {
+            setBlock(chunk, lx, ly, lz, BlockTypes.WOOD);
+          }
+        }
+        // Torch/leaves on top
+        const topY = spawnY + 5 - worldBaseY;
+        if (topY >= 0 && topY < CHUNK_SIZE) {
+          setBlock(chunk, lx, topY, lz, BlockTypes.LEAVES);
+        }
+      }
+    }
+    
+    // Center beacon (tall pillar of light - using leaves for now)
+    const centerX = 0 - worldBaseX;
+    const centerZ = 0 - worldBaseZ;
+    if (centerX >= 0 && centerX < CHUNK_SIZE && centerZ >= 0 && centerZ < CHUNK_SIZE) {
+      for (let h = 1; h <= 8; h++) {
+        const ly = spawnY + h - worldBaseY;
+        if (ly >= 0 && ly < CHUNK_SIZE) {
+          setBlock(chunk, centerX, ly, centerZ, h <= 2 ? BlockTypes.STONE : BlockTypes.LEAVES);
+        }
+      }
+    }
   }
 
   private getBlockAt(worldY: number, terrainHeight: number): number {

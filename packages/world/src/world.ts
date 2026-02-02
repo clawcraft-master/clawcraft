@@ -114,11 +114,14 @@ export class World {
   }
 
   /**
-   * Find spawn point (top of terrain near origin)
+   * Find spawn point (on the spawn platform near origin)
    */
   findSpawnPoint(): Vec3 {
-    const x = 0;
-    const z = 0;
+    // Random position within spawn platform
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.random() * 5;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
     
     // Find ground level
     for (let y = 128; y > 0; y--) {

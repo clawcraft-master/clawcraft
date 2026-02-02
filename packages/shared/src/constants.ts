@@ -28,6 +28,9 @@ export const BlockTypes = {
   WATER: 6,
   SAND: 7,
   BEDROCK: 8,
+  FLOWER_RED: 9,
+  FLOWER_YELLOW: 10,
+  TALL_GRASS: 11,
 } as const;
 
 export type BlockTypeName = keyof typeof BlockTypes;
@@ -51,6 +54,9 @@ export const BlockDefinitions: Record<number, BlockDefinition> = {
   [BlockTypes.WATER]: { id: 6, name: 'Water', solid: false, transparent: true },
   [BlockTypes.SAND]: { id: 7, name: 'Sand', solid: true, transparent: false },
   [BlockTypes.BEDROCK]: { id: 8, name: 'Bedrock', solid: true, transparent: false },
+  [BlockTypes.FLOWER_RED]: { id: 9, name: 'Red Flower', solid: false, transparent: true },
+  [BlockTypes.FLOWER_YELLOW]: { id: 10, name: 'Yellow Flower', solid: false, transparent: true },
+  [BlockTypes.TALL_GRASS]: { id: 11, name: 'Tall Grass', solid: false, transparent: true },
 };
 
 // ============================================================================
