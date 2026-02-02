@@ -17,6 +17,7 @@ let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
 let renderer: THREE.WebGLRenderer;
 let chunkMeshes: Map<string, THREE.Mesh> = new Map();
+let waterMeshes: Map<string, THREE.Mesh> = new Map();
 let agentMeshes: Map<string, THREE.Mesh> = new Map();
 
 // Controls
@@ -38,6 +39,7 @@ function init(): void {
   // Three.js setup
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87ceeb); // Sky blue
+  scene.fog = new THREE.Fog(0x87ceeb, 50, 200); // Fog for atmosphere
 
   camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.set(0, 70, 0);
@@ -220,16 +222,24 @@ const blockColors: Record<number, number> = {
 function createChunkMesh(chunk: Chunk): void {
   const key = chunkKey(chunk.coord);
   
-  // Remove old mesh
+  // Remove old meshes
   const oldMesh = chunkMeshes.get(key);
   if (oldMesh) {
     scene.remove(oldMesh);
     oldMesh.geometry.dispose();
   }
+  const oldWater = waterMeshes.get(key);
+  if (oldWater) {
+    scene.remove(oldWater);
+    oldWater.geometry.dispose();
+  }
 
   const geometry = new THREE.BufferGeometry();
   const positions: number[] = [];
   const colors: number[] = [];
+  
+  const waterGeometry = new THREE.BufferGeometry();
+  const waterPositions: number[] = [];
 
   const worldX = chunk.coord.cx * CHUNK_SIZE;
   const worldY = chunk.coord.cy * CHUNK_SIZE;
@@ -242,7 +252,17 @@ function createChunkMesh(chunk: Chunk): void {
         const blockId = chunk.blocks[index] as number;
         
         if (blockId === BlockTypes.AIR) continue;
-        if (blockId === BlockTypes.WATER) continue; // Skip water for now
+        
+        // Handle water separately
+        if (blockId === BlockTypes.WATER) {
+          // Only render top face of water
+          const aboveIndex = x + (y + 1) * CHUNK_SIZE + z * CHUNK_SIZE * CHUNK_SIZE;
+          const aboveBlock = y + 1 < CHUNK_SIZE ? chunk.blocks[aboveIndex] : BlockTypes.AIR;
+          if (aboveBlock === BlockTypes.AIR) {
+            addWaterFace(waterPositions, worldX + x, worldY + y, worldZ + z);
+          }
+          continue;
+        }
 
         const def = BlockDefinitions[blockId as keyof typeof BlockDefinitions];
         if (!def?.solid) continue;
@@ -266,7 +286,8 @@ function createChunkMesh(chunk: Chunk): void {
           if (nx >= 0 && nx < CHUNK_SIZE && ny >= 0 && ny < CHUNK_SIZE && nz >= 0 && nz < CHUNK_SIZE) {
             const nIndex = nx + ny * CHUNK_SIZE + nz * CHUNK_SIZE * CHUNK_SIZE;
             const nBlock = chunk.blocks[nIndex] as number;
-            neighborSolid = BlockDefinitions[nBlock as keyof typeof BlockDefinitions]?.solid ?? false;
+            const nDef = BlockDefinitions[nBlock as keyof typeof BlockDefinitions];
+            neighborSolid = nDef?.solid ?? false;
           }
 
           if (!neighborSolid) {
@@ -277,17 +298,46 @@ function createChunkMesh(chunk: Chunk): void {
     }
   }
 
-  if (positions.length === 0) return;
+  // Create solid mesh
+  if (positions.length > 0) {
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geometry.computeVertexNormals();
 
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geometry.computeVertexNormals();
+    const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+    chunkMeshes.set(key, mesh);
+  }
 
-  const material = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const mesh = new THREE.Mesh(geometry, material);
-  
-  scene.add(mesh);
-  chunkMeshes.set(key, mesh);
+  // Create water mesh
+  if (waterPositions.length > 0) {
+    waterGeometry.setAttribute('position', new THREE.Float32BufferAttribute(waterPositions, 3));
+    waterGeometry.computeVertexNormals();
+
+    const waterMaterial = new THREE.MeshLambertMaterial({
+      color: 0x4488ff,
+      transparent: true,
+      opacity: 0.6,
+      side: THREE.DoubleSide,
+    });
+    const waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
+    scene.add(waterMesh);
+    waterMeshes.set(key, waterMesh);
+  }
+}
+
+function addWaterFace(positions: number[], x: number, y: number, z: number): void {
+  // Slightly lower water surface for visual effect
+  const waterY = y + 0.9;
+  positions.push(
+    x, waterY, z,
+    x, waterY, z + 1,
+    x + 1, waterY, z + 1,
+    x, waterY, z,
+    x + 1, waterY, z + 1,
+    x + 1, waterY, z,
+  );
 }
 
 function addFace(
