@@ -10,6 +10,11 @@
  */
 
 import { v4 as uuid } from 'uuid';
+import * as fs from 'fs';
+import * as path from 'path';
+
+const DATA_DIR = './world-data';
+const VERIFIED_AGENTS_FILE = path.join(DATA_DIR, 'verified-agents.json');
 
 export interface PendingVerification {
   id: string;
@@ -29,10 +34,39 @@ export interface VerifiedAgent {
   verifiedAt: number;
 }
 
-// In-memory stores (TODO: persist to disk)
+// Stores
 const pendingVerifications: Map<string, PendingVerification> = new Map();
 const verifiedAgents: Map<string, VerifiedAgent> = new Map();
 const CODE_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
+
+// Load verified agents from disk on startup
+loadVerifiedAgents();
+
+function loadVerifiedAgents(): void {
+  try {
+    if (fs.existsSync(VERIFIED_AGENTS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(VERIFIED_AGENTS_FILE, 'utf-8'));
+      for (const agent of data) {
+        verifiedAgents.set(agent.id, agent);
+      }
+      console.log(`Loaded ${verifiedAgents.size} verified agents`);
+    }
+  } catch (err) {
+    console.error('Failed to load verified agents:', err);
+  }
+}
+
+function saveVerifiedAgents(): void {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const data = Array.from(verifiedAgents.values());
+    fs.writeFileSync(VERIFIED_AGENTS_FILE, JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.error('Failed to save verified agents:', err);
+  }
+}
 
 /**
  * Start signup process - generate verification code
@@ -127,6 +161,9 @@ export async function verifyPost(verificationId: string, postUrl: string): Promi
 
   verifiedAgents.set(agent.id, agent);
   pendingVerifications.delete(verificationId);
+  
+  // Persist to disk
+  saveVerifiedAgents();
 
   console.log(`✅ Agent verified: ${agent.username} via ${provider} (@${agent.socialHandle})`);
 
