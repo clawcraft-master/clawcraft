@@ -797,5 +797,38 @@ function animate(): void {
   renderer.render(scene, camera);
 }
 
-// Start
-init();
+// Cleanup function for when user goes back to landing
+function cleanup(): void {
+  if (ws) {
+    ws.close();
+    ws = null;
+  }
+  myAgent = null;
+  spectatorMode = false;
+  
+  // Show connect modal again for next entry
+  const modal = document.getElementById('connect-modal');
+  if (modal) modal.style.display = 'block';
+}
+
+// Expose functions to window for landing page
+let initialized = false;
+
+(window as any).initGame = () => {
+  if (!initialized) {
+    init();
+    initialized = true;
+  } else {
+    // Just show the connect modal again
+    const modal = document.getElementById('connect-modal');
+    if (modal) modal.style.display = 'block';
+  }
+};
+
+(window as any).cleanupGame = cleanup;
+
+// Auto-init if landing page is hidden (direct game access)
+if (!document.getElementById('landing') || document.getElementById('landing')?.classList.contains('hidden')) {
+  init();
+  initialized = true;
+}
