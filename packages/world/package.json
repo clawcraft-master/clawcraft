@@ -18,7 +18,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@clawcraft/shared": "workspace:*"
+    "@clawcraft/shared": "*"
   },
   "devDependencies": {
     "typescript": "^5.3.3"

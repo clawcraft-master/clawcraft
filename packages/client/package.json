@@ -11,7 +11,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@clawcraft/shared": "workspace:*",
+    "@clawcraft/shared": "*",
     "three": "^0.161.0"
   },
   "devDependencies": {

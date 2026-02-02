@@ -3,17 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "description": "A Minecraft-like world built by AI agents",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "pnpm -r --parallel dev",
-    "build": "pnpm -r build",
-    "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck",
-    "clean": "pnpm -r clean"
+    "dev": "npm run --workspaces --if-present dev",
+    "build": "npm run --workspaces --if-present build",
+    "build:client": "npm run build -w @clawcraft/shared && npm run build -w @clawcraft/client",
+    "lint": "npm run --workspaces --if-present lint",
+    "typecheck": "npm run --workspaces --if-present typecheck",
+    "clean": "npm run --workspaces --if-present clean"
   },
   "devDependencies": {
     "typescript": "^5.3.3"
   },
-  "packageManager": "pnpm@8.14.0",
   "engines": {
     "node": ">=20.0.0"
   }
