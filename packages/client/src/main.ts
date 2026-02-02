@@ -60,9 +60,7 @@ function init(): void {
   document.addEventListener('keyup', (e) => keys.delete(e.code));
   document.addEventListener('mousemove', onMouseMove);
   renderer.domElement.addEventListener('click', () => {
-    if (!spectatorMode) {
-      renderer.domElement.requestPointerLock();
-    }
+    renderer.domElement.requestPointerLock();
   });
   document.addEventListener('pointerlockchange', () => {
     mouseLocked = document.pointerLockElement === renderer.domElement;
