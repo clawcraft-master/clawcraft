@@ -26,6 +26,19 @@ let mouseLocked = false;
 let yaw = 0;
 let pitch = 0;
 
+// Block interaction
+let selectedBlockIndex = 0;
+const hotbarBlocks = [
+  BlockTypes.STONE,
+  BlockTypes.DIRT,
+  BlockTypes.GRASS,
+  BlockTypes.WOOD,
+  BlockTypes.LEAVES,
+  BlockTypes.SAND,
+];
+const raycaster = new THREE.Raycaster();
+raycaster.far = 10; // Max reach distance
+
 // Stats
 let lastTime = performance.now();
 let frames = 0;
@@ -62,7 +75,41 @@ function init(): void {
   document.addEventListener('keyup', (e) => keys.delete(e.code));
   document.addEventListener('mousemove', onMouseMove);
   renderer.domElement.addEventListener('click', () => {
-    renderer.domElement.requestPointerLock();
+    if (!mouseLocked) {
+      renderer.domElement.requestPointerLock();
+    }
+  });
+  
+  // Block interaction
+  renderer.domElement.addEventListener('mousedown', (e) => {
+    if (!mouseLocked || spectatorMode || !myAgent) return;
+    
+    if (e.button === 0) {
+      // Left click - break block
+      const hit = raycastBlock(false);
+      if (hit) {
+        send({ type: 'action', action: { type: 'break_block', position: hit } });
+      }
+    } else if (e.button === 2) {
+      // Right click - place block
+      const hit = raycastBlock(true);
+      if (hit) {
+        send({ type: 'action', action: { type: 'place_block', position: hit, blockId: hotbarBlocks[selectedBlockIndex] as number } });
+      }
+    }
+  });
+  
+  // Prevent context menu on right click
+  renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+  
+  // Hotbar selection with number keys
+  document.addEventListener('keydown', (e) => {
+    if (document.activeElement?.tagName === 'INPUT') return;
+    const num = parseInt(e.key);
+    if (num >= 1 && num <= hotbarBlocks.length) {
+      selectedBlockIndex = num - 1;
+      updateHotbar();
+    }
   });
   document.addEventListener('pointerlockchange', () => {
     mouseLocked = document.pointerLockElement === renderer.domElement;
@@ -114,6 +161,9 @@ function connect(spectate: boolean): void {
     console.log('Connected to server');
     send({ type: 'auth', token: name });
     document.getElementById('connect-modal')!.style.display = 'none';
+    if (!spectate) {
+      updateHotbar();
+    }
   };
 
   ws.onmessage = (event) => {
@@ -535,6 +585,59 @@ function processInput(): void {
   if (keys.has('Space')) {
     send({ type: 'action', action: { type: 'jump' } });
     keys.delete('Space');
+  }
+}
+
+// ============================================================================
+// BLOCK INTERACTION
+// ============================================================================
+
+function raycastBlock(placeMode: boolean): { x: number; y: number; z: number } | null {
+  // Cast ray from camera center
+  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+  
+  // Get all chunk meshes
+  const meshes = Array.from(chunkMeshes.values());
+  const intersects = raycaster.intersectObjects(meshes);
+  
+  if (intersects.length === 0) return null;
+  
+  const hit = intersects[0];
+  const point = hit.point;
+  const normal = hit.face?.normal;
+  
+  if (!normal) return null;
+  
+  if (placeMode) {
+    // Place block on the face we hit
+    return {
+      x: Math.floor(point.x + normal.x * 0.5),
+      y: Math.floor(point.y + normal.y * 0.5),
+      z: Math.floor(point.z + normal.z * 0.5),
+    };
+  } else {
+    // Break the block we hit
+    return {
+      x: Math.floor(point.x - normal.x * 0.5),
+      y: Math.floor(point.y - normal.y * 0.5),
+      z: Math.floor(point.z - normal.z * 0.5),
+    };
+  }
+}
+
+function updateHotbar(): void {
+  const container = document.getElementById('hotbar');
+  if (!container) return;
+  
+  container.innerHTML = '';
+  const blockNames = ['Stone', 'Dirt', 'Grass', 'Wood', 'Leaves', 'Sand'];
+  
+  for (let i = 0; i < hotbarBlocks.length; i++) {
+    const slot = document.createElement('div');
+    slot.className = 'hotbar-slot' + (i === selectedBlockIndex ? ' selected' : '');
+    slot.innerHTML = `<span class="key">${i + 1}</span><span class="name">${blockNames[i]}</span>`;
+    slot.style.backgroundColor = '#' + (blockColors[hotbarBlocks[i] as keyof typeof blockColors] ?? 0xff00ff).toString(16).padStart(6, '0');
+    container.appendChild(slot);
   }
 }
 
