@@ -19,6 +19,7 @@ let renderer: THREE.WebGLRenderer;
 let chunkMeshes: Map<string, THREE.Mesh> = new Map();
 let waterMeshes: Map<string, THREE.Mesh> = new Map();
 let agentMeshes: Map<string, THREE.Mesh> = new Map();
+let agentLabels: Map<string, THREE.Sprite> = new Map();
 
 // Controls
 const keys: Set<string> = new Set();
@@ -279,6 +280,12 @@ function updateTick(tick: number, snapshots: AgentSnapshot[]): void {
       if (mesh) {
         mesh.position.set(snap.position.x, snap.position.y + 0.9, snap.position.z);
       }
+      
+      // Update label position
+      const label = agentLabels.get(snap.id);
+      if (label) {
+        label.position.set(snap.position.x, snap.position.y + 2.5, snap.position.z);
+      }
 
       // Update camera if this is our agent
       if (myAgent && snap.id === myAgent.id && !spectatorMode) {
@@ -534,6 +541,42 @@ function createAgentMesh(agent: Agent): void {
   
   scene.add(mesh);
   agentMeshes.set(agent.id, mesh);
+  
+  // Create name label
+  const label = createNameLabel(agent.name);
+  label.position.set(agent.position.x, agent.position.y + 2.5, agent.position.z);
+  scene.add(label);
+  agentLabels.set(agent.id, label);
+}
+
+function createNameLabel(name: string): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d')!;
+  canvas.width = 256;
+  canvas.height = 64;
+  
+  // Background
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+  ctx.roundRect(0, 16, canvas.width, 40, 8);
+  ctx.fill();
+  
+  // Text
+  ctx.font = 'bold 28px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#4ecdc4';
+  ctx.fillText(name, canvas.width / 2, canvas.height / 2 + 4);
+  
+  const texture = new THREE.CanvasTexture(canvas);
+  const material = new THREE.SpriteMaterial({ 
+    map: texture, 
+    transparent: true,
+    depthTest: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(2, 0.5, 1);
+  
+  return sprite;
 }
 
 function removeAgentMesh(agentId: string): void {
@@ -542,6 +585,13 @@ function removeAgentMesh(agentId: string): void {
     scene.remove(mesh);
     mesh.geometry.dispose();
     agentMeshes.delete(agentId);
+  }
+  
+  const label = agentLabels.get(agentId);
+  if (label) {
+    scene.remove(label);
+    label.material.dispose();
+    agentLabels.delete(agentId);
   }
 }
 
