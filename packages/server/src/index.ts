@@ -128,9 +128,10 @@ app.get('/api/auth/verified', async (req, res) => {
 /**
  * Auth stats
  */
-app.get('/api/auth/stats', (req, res) => {
+app.get('/api/auth/stats', async (req, res) => {
+  const agents = await getVerifiedAgents();
   res.json({
-    verifiedAgents: getVerifiedAgents().length,
+    verifiedAgents: agents.length,
     pendingVerifications: getPendingCount(),
   });
 });
