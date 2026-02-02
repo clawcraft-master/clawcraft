@@ -37,16 +37,36 @@ export class GameServer {
   private chatHistory: ChatMessage[] = [];
   private readonly MAX_CHAT_HISTORY = 100;
   private tickInterval: NodeJS.Timeout | null = null;
+  private saveInterval: NodeJS.Timeout | null = null;
+  private readonly SAVE_INTERVAL_MS = 60000; // Auto-save every minute
   private tick = 0;
   private startTime = Date.now();
 
   constructor() {
-    this.world = new World({ generator: { seed: 42 } });
+    this.world = new World({ 
+      generator: { seed: 42 },
+      savePath: './world-data',
+    });
+    
+    // Handle graceful shutdown
+    process.on('SIGINT', () => this.shutdown());
+    process.on('SIGTERM', () => this.shutdown());
   }
 
   start(): void {
     console.log('Starting game loop...');
     this.tickInterval = setInterval(() => this.update(), TICK_MS);
+    
+    // Auto-save interval
+    this.saveInterval = setInterval(() => {
+      const count = this.world.getModifiedCount();
+      if (count > 0) {
+        console.log(`Auto-saving ${count} modified chunks...`);
+        this.world.saveWorld();
+      }
+    }, this.SAVE_INTERVAL_MS);
+    
+    console.log(`Auto-save enabled (every ${this.SAVE_INTERVAL_MS / 1000}s)`);
   }
 
   stop(): void {
@@ -54,6 +74,20 @@ export class GameServer {
       clearInterval(this.tickInterval);
       this.tickInterval = null;
     }
+    if (this.saveInterval) {
+      clearInterval(this.saveInterval);
+      this.saveInterval = null;
+    }
+    
+    // Final save
+    console.log('Saving world before shutdown...');
+    this.world.saveWorld();
+  }
+  
+  private shutdown(): void {
+    console.log('\nShutting down gracefully...');
+    this.stop();
+    process.exit(0);
   }
 
   handleConnection(ws: WebSocket): void {

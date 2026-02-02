@@ -1,11 +1,14 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import type { Chunk, ChunkCoord, Vec3, BlockId, Agent } from '@clawcraft/shared';
 import { BlockTypes, BlockDefinitions, CHUNK_SIZE } from '@clawcraft/shared';
-import { chunkKey, parseChunkKey, worldToChunk, worldToLocal, getBlock, setBlock } from './chunk';
+import { chunkKey, parseChunkKey, worldToChunk, worldToLocal, getBlock, setBlock, createChunk } from './chunk';
 import { TerrainGenerator, GeneratorConfig } from './generator';
 
 export interface WorldConfig {
   generator?: Partial<GeneratorConfig>;
   loadDistance?: number; // Chunks to keep loaded around agents
+  savePath?: string; // Path to save world data
 }
 
 /**
@@ -13,12 +16,18 @@ export interface WorldConfig {
  */
 export class World {
   private chunks: Map<string, Chunk> = new Map();
+  private modifiedChunks: Set<string> = new Set(); // Track which chunks have player modifications
   private generator: TerrainGenerator;
   private loadDistance: number;
+  private savePath: string;
 
   constructor(config: WorldConfig = {}) {
     this.generator = new TerrainGenerator(config.generator);
     this.loadDistance = config.loadDistance ?? 4;
+    this.savePath = config.savePath ?? './world-data';
+    
+    // Load saved world data
+    this.loadWorld();
   }
 
   /**
@@ -59,6 +68,11 @@ export class World {
     const chunk = this.getChunk(chunkCoord);
     const local = worldToLocal(x, y, z);
     setBlock(chunk, local.x, local.y, local.z, blockId);
+    
+    // Track this chunk as modified
+    const key = chunkKey(chunkCoord);
+    this.modifiedChunks.add(key);
+    
     return true;
   }
 
@@ -175,5 +189,85 @@ export class World {
     }
 
     return null;
+  }
+
+  /**
+   * Save modified chunks to disk
+   */
+  saveWorld(): void {
+    if (this.modifiedChunks.size === 0) {
+      return;
+    }
+
+    try {
+      // Ensure save directory exists
+      if (!fs.existsSync(this.savePath)) {
+        fs.mkdirSync(this.savePath, { recursive: true });
+      }
+
+      // Save each modified chunk
+      for (const key of this.modifiedChunks) {
+        const chunk = this.chunks.get(key);
+        if (chunk) {
+          const filePath = path.join(this.savePath, `chunk_${key.replace(/,/g, '_')}.json`);
+          const data = {
+            coord: chunk.coord,
+            blocks: Array.from(chunk.blocks), // Convert Uint8Array to regular array
+          };
+          fs.writeFileSync(filePath, JSON.stringify(data));
+        }
+      }
+
+      console.log(`Saved ${this.modifiedChunks.size} modified chunks`);
+      this.modifiedChunks.clear();
+    } catch (err) {
+      console.error('Failed to save world:', err);
+    }
+  }
+
+  /**
+   * Load saved chunks from disk
+   */
+  loadWorld(): void {
+    try {
+      if (!fs.existsSync(this.savePath)) {
+        console.log('No saved world data found, starting fresh');
+        return;
+      }
+
+      const files = fs.readdirSync(this.savePath).filter(f => f.startsWith('chunk_') && f.endsWith('.json'));
+      let loaded = 0;
+
+      for (const file of files) {
+        try {
+          const filePath = path.join(this.savePath, file);
+          const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+          
+          // Create chunk from saved data
+          const chunk = createChunk(data.coord);
+          chunk.blocks = new Uint8Array(data.blocks);
+          chunk.dirty = false;
+          
+          const key = chunkKey(data.coord);
+          this.chunks.set(key, chunk);
+          loaded++;
+        } catch (err) {
+          console.error(`Failed to load chunk ${file}:`, err);
+        }
+      }
+
+      if (loaded > 0) {
+        console.log(`Loaded ${loaded} saved chunks`);
+      }
+    } catch (err) {
+      console.error('Failed to load world:', err);
+    }
+  }
+
+  /**
+   * Get count of modified chunks waiting to be saved
+   */
+  getModifiedCount(): number {
+    return this.modifiedChunks.size;
   }
 }
