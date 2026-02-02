@@ -20,12 +20,14 @@ export class SimplexNoise {
     for (let i = 255; i > 0; i--) {
       n = (n * 1103515245 + 12345) & 0x7fffffff;
       const j = n % (i + 1);
-      [p[i], p[j]] = [p[j], p[i]];
+      const tmp = p[i] as number;
+      p[i] = p[j] as number;
+      p[j] = tmp;
     }
     
     // Duplicate for wrapping
     for (let i = 0; i < 512; i++) {
-      this.perm[i] = p[i & 255];
+      this.perm[i] = p[i & 255] as number;
     }
   }
 
@@ -54,12 +56,12 @@ export class SimplexNoise {
     const u = this.fade(x);
     const v = this.fade(y);
     
-    const A = this.perm[X] + Y;
-    const B = this.perm[X + 1] + Y;
+    const A = (this.perm[X] as number) + Y;
+    const B = (this.perm[X + 1] as number) + Y;
     
     return this.lerp(
-      this.lerp(this.grad(this.perm[A], x, y), this.grad(this.perm[B], x - 1, y), u),
-      this.lerp(this.grad(this.perm[A + 1], x, y - 1), this.grad(this.perm[B + 1], x - 1, y - 1), u),
+      this.lerp(this.grad(this.perm[A] as number, x, y), this.grad(this.perm[B] as number, x - 1, y), u),
+      this.lerp(this.grad(this.perm[A + 1] as number, x, y - 1), this.grad(this.perm[B + 1] as number, x - 1, y - 1), u),
       v
     );
   }

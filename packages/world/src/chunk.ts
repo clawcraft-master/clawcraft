@@ -58,7 +58,7 @@ export function getBlock(chunk: Chunk, x: number, y: number, z: number): BlockId
   if (x < 0 || x >= CHUNK_SIZE || y < 0 || y >= CHUNK_SIZE || z < 0 || z >= CHUNK_SIZE) {
     return BlockTypes.AIR;
   }
-  return chunk.blocks[coordToIndex(x, y, z)];
+  return chunk.blocks[coordToIndex(x, y, z)] as BlockId;
 }
 
 /**
@@ -80,6 +80,6 @@ export function chunkKey(coord: ChunkCoord): string {
 }
 
 export function parseChunkKey(key: string): ChunkCoord {
-  const [cx, cy, cz] = key.split(',').map(Number);
-  return { cx, cy, cz };
+  const parts = key.split(',').map(Number);
+  return { cx: parts[0] ?? 0, cy: parts[1] ?? 0, cz: parts[2] ?? 0 };
 }
