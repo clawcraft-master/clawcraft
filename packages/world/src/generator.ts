@@ -150,7 +150,7 @@ export class TerrainGenerator {
   }
 
   private addSpawnStructure(chunk: Chunk, worldBaseX: number, worldBaseY: number, worldBaseZ: number, spawnY: number): void {
-    const pillarPositions = [
+    const pillarPositions: [number, number][] = [
       [-6, -6], [-6, 6], [6, -6], [6, 6]
     ];
     
