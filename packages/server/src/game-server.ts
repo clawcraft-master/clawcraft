@@ -168,9 +168,9 @@ export class GameServer {
     console.log(`[Chat] ${agent.name}: ${text}`);
   }
 
-  private handleAuth(client: ConnectedClient, token: string): void {
+  private async handleAuth(client: ConnectedClient, token: string): Promise<void> {
     // Authenticate using the auth module
-    const authResult = authenticate(token);
+    const authResult = await authenticate(token);
     
     const spawnPoint = this.world.findSpawnPoint();
     const agentId = authResult.verified 

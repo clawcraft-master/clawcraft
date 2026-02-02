@@ -7,14 +7,11 @@
  * 3. Agent posts on Twitter/Moltbook with the code
  * 4. Agent submits post URL
  * 5. Server verifies code exists in post content
+ * 6. Agent receives secret token for future auth
  */
 
 import { v4 as uuid } from 'uuid';
-import * as fs from 'fs';
-import * as path from 'path';
-
-const DATA_DIR = './world-data';
-const VERIFIED_AGENTS_FILE = path.join(DATA_DIR, 'verified-agents.json');
+import * as db from './database';
 
 export interface PendingVerification {
   id: string;
@@ -24,65 +21,23 @@ export interface PendingVerification {
   expiresAt: number;
 }
 
-export interface VerifiedAgent {
-  id: string;
-  username: string;
-  provider: 'twitter' | 'moltbook';
-  socialId: string;
-  socialHandle: string;
-  postUrl: string;
-  verifiedAt: number;
-}
-
-// Stores
+// In-memory pending verifications (don't need to persist these)
 const pendingVerifications: Map<string, PendingVerification> = new Map();
-const verifiedAgents: Map<string, VerifiedAgent> = new Map();
 const CODE_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
-
-// Load verified agents from disk on startup
-loadVerifiedAgents();
-
-function loadVerifiedAgents(): void {
-  try {
-    if (fs.existsSync(VERIFIED_AGENTS_FILE)) {
-      const data = JSON.parse(fs.readFileSync(VERIFIED_AGENTS_FILE, 'utf-8'));
-      for (const agent of data) {
-        verifiedAgents.set(agent.id, agent);
-      }
-      console.log(`Loaded ${verifiedAgents.size} verified agents`);
-    }
-  } catch (err) {
-    console.error('Failed to load verified agents:', err);
-  }
-}
-
-function saveVerifiedAgents(): void {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    const data = Array.from(verifiedAgents.values());
-    fs.writeFileSync(VERIFIED_AGENTS_FILE, JSON.stringify(data, null, 2));
-  } catch (err) {
-    console.error('Failed to save verified agents:', err);
-  }
-}
 
 /**
  * Start signup process - generate verification code
  */
-export function startSignup(username: string): { id: string; code: string; expiresIn: number } {
+export async function startSignup(username: string): Promise<{ id: string; code: string; expiresIn: number }> {
   // Sanitize username
   const sanitized = username.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
   if (sanitized.length < 3) {
     throw new Error('Username must be at least 3 characters');
   }
 
-  // Check if username already verified
-  for (const agent of verifiedAgents.values()) {
-    if (agent.username.toLowerCase() === sanitized.toLowerCase()) {
-      throw new Error('Username already taken');
-    }
+  // Check if username already taken
+  if (await db.isUsernameTaken(sanitized)) {
+    throw new Error('Username already taken');
   }
 
   // Generate verification code
@@ -112,8 +67,12 @@ export function startSignup(username: string): { id: string; code: string; expir
 
 /**
  * Complete signup by verifying social post
+ * Returns the secret token for future authentication
  */
-export async function verifyPost(verificationId: string, postUrl: string): Promise<VerifiedAgent> {
+export async function verifyPost(verificationId: string, postUrl: string): Promise<{
+  agent: db.DbAgent;
+  secretToken: string;
+}> {
   const verification = pendingVerifications.get(verificationId);
   
   if (!verification) {
@@ -142,66 +101,70 @@ export async function verifyPost(verificationId: string, postUrl: string): Promi
     throw new Error(`Verification code "${verification.code}" not found in post`);
   }
 
-  // Create verified agent
-  const agent: VerifiedAgent = {
-    id: `${provider}:${postData.authorId}`,
+  // Check if this social account is already linked
+  const existing = await db.findAgentBySocialId(provider, postData.authorId);
+  if (existing && existing.username.toLowerCase() !== verification.username.toLowerCase()) {
+    throw new Error(`This ${provider} account is already linked to user "${existing.username}"`);
+  }
+
+  // Create or update agent in database
+  const agent = await db.createAgent({
     username: verification.username,
     provider,
     socialId: postData.authorId,
     socialHandle: postData.authorHandle,
     postUrl,
-    verifiedAt: Date.now(),
-  };
+  });
 
-  // Check if social account already linked to another user
-  const existing = verifiedAgents.get(agent.id);
-  if (existing && existing.username !== agent.username) {
-    throw new Error(`This ${provider} account is already linked to user "${existing.username}"`);
-  }
-
-  verifiedAgents.set(agent.id, agent);
   pendingVerifications.delete(verificationId);
-  
-  // Persist to disk
-  saveVerifiedAgents();
 
   console.log(`✅ Agent verified: ${agent.username} via ${provider} (@${agent.socialHandle})`);
 
-  return agent;
+  return {
+    agent,
+    secretToken: agent.secretToken,
+  };
 }
 
 /**
- * Check if a token is a verified agent
+ * Authenticate with secret token
+ * This is the secure way for verified agents to connect
  */
-export function getVerifiedAgent(token: string): VerifiedAgent | null {
-  // Token can be the agent ID or username
-  const agent = verifiedAgents.get(token);
-  if (agent) return agent;
+export async function authenticateWithToken(token: string): Promise<{
+  success: true;
+  agent: db.DbAgent;
+} | {
+  success: false;
+  error: string;
+}> {
+  // Try to find agent by token
+  const agent = await db.findAgentByToken(token);
+  
+  if (agent) {
+    await db.updateLastSeen(agent.id);
+    return { success: true, agent };
+  }
 
-  // Try finding by username
-  for (const a of verifiedAgents.values()) {
-    if (a.username.toLowerCase() === token.toLowerCase()) {
-      return a;
+  return { success: false, error: 'Invalid token' };
+}
+
+/**
+ * Authenticate - either with token or as guest
+ */
+export async function authenticate(token: string): Promise<{
+  verified: boolean;
+  agent?: db.DbAgent;
+  guestName?: string;
+}> {
+  // First try as secret token (64 char hex)
+  if (token.length === 64 && /^[a-f0-9]+$/i.test(token)) {
+    const result = await authenticateWithToken(token);
+    if (result.success) {
+      return { verified: true, agent: result.agent };
     }
   }
 
-  return null;
-}
-
-/**
- * Authenticate - returns agent info or null for guests
- */
-export function authenticate(token: string): { 
-  verified: boolean; 
-  agent?: VerifiedAgent;
-  guestName?: string;
-} {
-  const agent = getVerifiedAgent(token);
-  if (agent) {
-    return { verified: true, agent };
-  }
-
-  // Allow as guest with sanitized name
+  // Not a valid token, treat as guest
   const guestName = token
     .replace(/[^a-zA-Z0-9_-]/g, '')
     .slice(0, 32) || `Guest-${Math.random().toString(36).slice(2, 8)}`;
@@ -230,9 +193,6 @@ async function fetchTwitterPost(url: string): Promise<{
   authorHandle: string;
 }> {
   // Extract tweet ID from URL
-  // Formats: 
-  // - https://twitter.com/username/status/1234567890
-  // - https://x.com/username/status/1234567890
   const match = url.match(/(?:twitter\.com|x\.com)\/([^/]+)\/status\/(\d+)/);
   if (!match) {
     throw new Error('Invalid Twitter URL format');
@@ -240,10 +200,8 @@ async function fetchTwitterPost(url: string): Promise<{
 
   const [, handle, tweetId] = match;
 
-  // Use Twitter's publish API (no auth needed) or scrape
-  // For simplicity, we'll use nitter or a public endpoint
   try {
-    // Try using syndication endpoint (public, no API key needed)
+    // Use Twitter's syndication endpoint (public, no API key needed)
     const response = await fetch(
       `https://cdn.syndication.twimg.com/tweet-result?id=${tweetId}&lang=en`,
       { headers: { 'User-Agent': 'Mozilla/5.0' } }
@@ -261,13 +219,8 @@ async function fetchTwitterPost(url: string): Promise<{
       authorHandle: data.user?.screen_name || handle,
     };
   } catch (err) {
-    // Fallback: just trust the URL and check via embed
-    console.warn('Twitter fetch failed, using URL-based verification:', err);
-    return {
-      content: '', // Will need manual verification
-      authorId: handle,
-      authorHandle: handle,
-    };
+    console.warn('Twitter fetch failed:', err);
+    throw new Error('Could not fetch tweet. Make sure the tweet is public.');
   }
 }
 
@@ -277,7 +230,6 @@ async function fetchMoltbookPost(url: string): Promise<{
   authorHandle: string;
 }> {
   // Extract post ID from URL
-  // Format depends on Moltbook URL structure
   const match = url.match(/moltbook\.com\/(?:post|p)\/([^/?]+)/);
   if (!match) {
     throw new Error('Invalid Moltbook URL format');
@@ -286,7 +238,6 @@ async function fetchMoltbookPost(url: string): Promise<{
   const postId = match[1];
 
   try {
-    // Fetch from Moltbook API (assuming public endpoint exists)
     const response = await fetch(`https://moltbook.com/api/posts/${postId}`);
     
     if (!response.ok) {
@@ -315,10 +266,10 @@ function cleanupExpired(): void {
 }
 
 /**
- * Get all verified agents (for admin/stats)
+ * Get all verified agents (from database)
  */
-export function getVerifiedAgents(): VerifiedAgent[] {
-  return Array.from(verifiedAgents.values());
+export async function getVerifiedAgents(): Promise<db.DbAgent[]> {
+  return db.getAllAgents();
 }
 
 /**

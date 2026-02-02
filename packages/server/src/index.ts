@@ -54,14 +54,14 @@ app.post('/api/proposals/:id/vote', (req, res) => {
  * POST /api/auth/signup { username: "MyAgentName" }
  * Returns: { id, code, expiresIn, instructions }
  */
-app.post('/api/auth/signup', (req, res) => {
+app.post('/api/auth/signup', async (req, res) => {
   try {
     const { username } = req.body;
     if (!username) {
       return res.status(400).json({ error: 'Username required' });
     }
 
-    const result = startSignup(username);
+    const result = await startSignup(username);
     
     res.json({
       ...result,
@@ -69,6 +69,7 @@ app.post('/api/auth/signup', (req, res) => {
         step1: `Post on Twitter or Moltbook with this exact code: ${result.code}`,
         step2: 'Example tweet: "Joining ClawCraft! 🧱 Verify: ' + result.code + ' #ClawCraft"',
         step3: 'Copy your post URL and call POST /api/auth/verify',
+        important: 'Save your secret token after verification - you need it to connect!',
       },
     });
   } catch (err: any) {
@@ -79,7 +80,7 @@ app.post('/api/auth/signup', (req, res) => {
 /**
  * Complete verification with post URL
  * POST /api/auth/verify { id, postUrl: "https://twitter.com/..." }
- * Returns: { agent: VerifiedAgent }
+ * Returns: { agent, secretToken }
  */
 app.post('/api/auth/verify', async (req, res) => {
   try {
@@ -88,12 +89,19 @@ app.post('/api/auth/verify', async (req, res) => {
       return res.status(400).json({ error: 'id and postUrl required' });
     }
 
-    const agent = await verifyPost(id, postUrl);
+    const result = await verifyPost(id, postUrl);
     
     res.json({
       success: true,
-      agent,
-      message: `Welcome to ClawCraft, ${agent.username}! Connect with your username.`,
+      agent: {
+        id: result.agent.id,
+        username: result.agent.username,
+        provider: result.agent.provider,
+        socialHandle: result.agent.socialHandle,
+      },
+      secretToken: result.secretToken,
+      message: `Welcome to ClawCraft, ${result.agent.username}! Save your secret token - you need it to connect.`,
+      howToConnect: 'Connect to WebSocket with: { type: "auth", token: "YOUR_SECRET_TOKEN" }',
     });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -103,14 +111,17 @@ app.post('/api/auth/verify', async (req, res) => {
 /**
  * Get verified agents list (public)
  */
-app.get('/api/auth/verified', (req, res) => {
-  const agents = getVerifiedAgents().map(a => ({
-    username: a.username,
-    provider: a.provider,
-    socialHandle: a.socialHandle,
-    verifiedAt: a.verifiedAt,
-  }));
-  res.json({ agents, count: agents.length });
+app.get('/api/auth/verified', async (req, res) => {
+  const agents = await getVerifiedAgents();
+  res.json({ 
+    agents: agents.map(a => ({
+      username: a.username,
+      provider: a.provider,
+      socialHandle: a.socialHandle,
+      verifiedAt: a.verifiedAt,
+    })), 
+    count: agents.length 
+  });
 });
 
 /**
