@@ -380,7 +380,7 @@ function onResize(): void {
 }
 
 function onMouseMove(event: MouseEvent): void {
-  if (!mouseLocked || spectatorMode) return;
+  if (!mouseLocked) return;
 
   const sensitivity = 0.002;
   yaw -= event.movementX * sensitivity;
@@ -391,11 +391,37 @@ function onMouseMove(event: MouseEvent): void {
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
 
-  send({ type: 'action', action: { type: 'look', pitch, yaw } });
+  // Only send look action if not spectator
+  if (!spectatorMode) {
+    send({ type: 'action', action: { type: 'look', pitch, yaw } });
+  }
 }
 
 function processInput(): void {
-  if (spectatorMode || !myAgent) return;
+  // Spectator fly-cam controls
+  if (spectatorMode) {
+    const speed = 0.5;
+    let dx = 0, dy = 0, dz = 0;
+    
+    if (keys.has('KeyW')) dz -= 1;
+    if (keys.has('KeyS')) dz += 1;
+    if (keys.has('KeyA')) dx -= 1;
+    if (keys.has('KeyD')) dx += 1;
+    if (keys.has('Space')) dy += 1;
+    if (keys.has('ShiftLeft') || keys.has('ShiftRight')) dy -= 1;
+
+    if (dx !== 0 || dy !== 0 || dz !== 0) {
+      const sin = Math.sin(yaw);
+      const cos = Math.cos(yaw);
+      
+      camera.position.x += (dx * cos - dz * sin) * speed;
+      camera.position.y += dy * speed;
+      camera.position.z += (dx * sin + dz * cos) * speed;
+    }
+    return;
+  }
+
+  if (!myAgent) return;
 
   let dx = 0, dz = 0;
   
