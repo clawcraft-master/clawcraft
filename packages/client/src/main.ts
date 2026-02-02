@@ -72,6 +72,32 @@ function init(): void {
   document.getElementById('connect-btn')!.addEventListener('click', () => connect(false));
   document.getElementById('spectate-btn')!.addEventListener('click', () => connect(true));
 
+  // Chat input
+  const chatInput = document.getElementById('chat-input') as HTMLInputElement;
+  chatInput.addEventListener('keydown', (e) => {
+    e.stopPropagation(); // Don't trigger movement keys while typing
+    if (e.key === 'Enter' && chatInput.value.trim()) {
+      if (!spectatorMode && myAgent) {
+        send({ type: 'chat', message: chatInput.value.trim() });
+      } else if (spectatorMode) {
+        addChatMessage('System', 'Spectators cannot chat. Connect as an agent to chat.');
+      }
+      chatInput.value = '';
+      chatInput.blur();
+    } else if (e.key === 'Escape') {
+      chatInput.blur();
+    }
+  });
+
+  // Press T or Enter to focus chat (when not already focused)
+  document.addEventListener('keydown', (e) => {
+    if (document.activeElement !== chatInput && (e.key === 't' || e.key === 'T' || e.key === 'Enter')) {
+      if (document.getElementById('connect-modal')!.style.display !== 'none') return;
+      e.preventDefault();
+      chatInput.focus();
+    }
+  });
+
   // Start render loop
   animate();
 }
@@ -124,6 +150,16 @@ function handleMessage(msg: ServerMessage): void {
         createAgentMesh(agent);
       }
       updateAgentList();
+      // Load chat history
+      if (msg.chatHistory) {
+        for (const chatMsg of msg.chatHistory) {
+          addChatMessage(chatMsg.senderName, chatMsg.text);
+        }
+      }
+      break;
+
+    case 'chat':
+      addChatMessage(msg.message.senderName, msg.message.text);
       break;
 
     case 'chunk_data':
@@ -522,9 +558,23 @@ function addChatMessage(name: string, message: string): void {
   const container = document.getElementById('chat-messages')!;
   const div = document.createElement('div');
   div.className = 'chat-message';
-  div.innerHTML = `<span class="name">${name}:</span> ${message}`;
+  
+  if (name === 'System') {
+    div.innerHTML = `<span class="system">* ${message}</span>`;
+  } else {
+    // Escape HTML to prevent XSS
+    const safeName = name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeMsg = message.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    div.innerHTML = `<span class="name">${safeName}:</span> ${safeMsg}`;
+  }
+  
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
+
+  // Limit messages shown
+  while (container.children.length > 50) {
+    container.removeChild(container.firstChild!);
+  }
 }
 
 // ============================================================================

@@ -19,6 +19,7 @@ import type {
   WorldStats,
   Proposal,
   AgentSnapshot,
+  ChatMessage,
 } from '@clawcraft/shared';
 import { World } from '@clawcraft/world';
 
@@ -33,6 +34,8 @@ export class GameServer {
   private clients: Map<WebSocket, ConnectedClient> = new Map();
   private agents: Map<string, Agent> = new Map();
   private proposals: Map<string, Proposal> = new Map();
+  private chatHistory: ChatMessage[] = [];
+  private readonly MAX_CHAT_HISTORY = 100;
   private tickInterval: NodeJS.Timeout | null = null;
   private tick = 0;
   private startTime = Date.now();
@@ -101,7 +104,33 @@ export class GameServer {
           }
         }
         break;
+
+      case 'chat':
+        if (client.agent && msg.message.trim()) {
+          this.handleChat(client.agent, msg.message.trim());
+        }
+        break;
     }
+  }
+
+  private handleChat(agent: Agent, text: string): void {
+    const chatMsg: ChatMessage = {
+      id: uuid(),
+      senderId: agent.id,
+      senderName: agent.name,
+      text: text.slice(0, 500), // Limit message length
+      timestamp: Date.now(),
+    };
+
+    // Add to history
+    this.chatHistory.push(chatMsg);
+    if (this.chatHistory.length > this.MAX_CHAT_HISTORY) {
+      this.chatHistory.shift();
+    }
+
+    // Broadcast to all
+    this.broadcast({ type: 'chat', message: chatMsg });
+    console.log(`[Chat] ${agent.name}: ${text}`);
   }
 
   private handleAuth(client: ConnectedClient, token: string): void {
@@ -139,6 +168,7 @@ export class GameServer {
       type: 'world_state',
       agents: Array.from(this.agents.values()),
       time: Date.now(),
+      chatHistory: this.chatHistory.slice(-50), // Last 50 messages
     });
 
     // Send initial chunks

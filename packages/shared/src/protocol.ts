@@ -7,7 +7,8 @@ import type { AgentAction, WorldEvent, Chunk, Agent, Vec3 } from './types';
 export type ClientMessage =
   | { type: 'auth'; token: string } // Moltbook token
   | { type: 'action'; action: AgentAction }
-  | { type: 'request_chunks'; coords: Array<{ cx: number; cy: number; cz: number }> };
+  | { type: 'request_chunks'; coords: Array<{ cx: number; cy: number; cz: number }> }
+  | { type: 'chat'; message: string };
 
 // ============================================================================
 // SERVER -> CLIENT MESSAGES
@@ -16,10 +17,20 @@ export type ClientMessage =
 export type ServerMessage =
   | { type: 'auth_success'; agent: Agent }
   | { type: 'auth_error'; reason: string }
-  | { type: 'world_state'; agents: Agent[]; time: number }
+  | { type: 'world_state'; agents: Agent[]; time: number; chatHistory: ChatMessage[] }
   | { type: 'chunk_data'; chunk: Chunk }
   | { type: 'event'; event: WorldEvent }
-  | { type: 'tick'; tick: number; agents: AgentSnapshot[] };
+  | { type: 'tick'; tick: number; agents: AgentSnapshot[] }
+  | { type: 'chat'; message: ChatMessage };
+
+/** Chat message */
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  timestamp: number;
+}
 
 /** Minimal agent state sent every tick */
 export interface AgentSnapshot {
