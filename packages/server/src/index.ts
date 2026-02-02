@@ -4,8 +4,23 @@ import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import { DEFAULT_SERVER_PORT } from '@clawcraft/shared';
 import { GameServer } from './game-server';
+import { configureAuth } from './auth';
 
 const PORT = Number(process.env.PORT) || DEFAULT_SERVER_PORT;
+
+// Configure authentication from environment
+configureAuth({
+  twitter: process.env.TWITTER_BEARER_TOKEN ? {
+    apiKey: process.env.TWITTER_API_KEY || '',
+    apiSecret: process.env.TWITTER_API_SECRET || '',
+    bearerToken: process.env.TWITTER_BEARER_TOKEN,
+  } : undefined,
+  moltbook: process.env.MOLTBOOK_API_URL ? {
+    apiUrl: process.env.MOLTBOOK_API_URL,
+    apiKey: process.env.MOLTBOOK_API_KEY,
+  } : undefined,
+  allowGuests: process.env.ALLOW_GUESTS !== 'false', // Default to true
+});
 
 // Express app for REST API
 const app = express();

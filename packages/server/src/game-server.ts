@@ -8,6 +8,7 @@ import {
   WALK_SPEED,
   BlockTypes,
 } from '@clawcraft/shared';
+import { authenticate, configureAuth, AuthResult } from './auth';
 import type {
   Agent,
   Vec3,
@@ -167,17 +168,25 @@ export class GameServer {
     console.log(`[Chat] ${agent.name}: ${text}`);
   }
 
-  private handleAuth(client: ConnectedClient, token: string): void {
-    // TODO: Validate Moltbook token
-    // For now, accept any token as agent name
-    const agentName = token || `Agent-${uuid().slice(0, 8)}`;
+  private async handleAuth(client: ConnectedClient, token: string): Promise<void> {
+    // Authenticate using the auth module
+    const authResult = await authenticate(token);
+    
+    if (!authResult.success) {
+      this.send(client.ws, { 
+        type: 'auth_error', 
+        reason: authResult.error || 'Authentication failed' 
+      });
+      console.log(`Auth failed for token: ${token.slice(0, 20)}... - ${authResult.error}`);
+      return;
+    }
     
     const spawnPoint = this.world.findSpawnPoint();
     const agent: Agent = {
-      id: uuid(),
+      id: authResult.userId,
       type: 'agent',
-      name: agentName,
-      moltbookId: token || undefined,
+      name: authResult.displayName,
+      moltbookId: authResult.provider !== 'guest' ? authResult.userId : undefined,
       position: spawnPoint,
       rotation: { x: 0, y: 0, z: 0 },
       velocity: { x: 0, y: 0, z: 0 },
@@ -214,7 +223,7 @@ export class GameServer {
     // Broadcast join event
     this.broadcast({ type: 'event', event: { type: 'agent_joined', agent } });
 
-    console.log(`Agent joined: ${agent.name} at ${JSON.stringify(agent.position)}`);
+    console.log(`Agent joined: ${agent.name} (${authResult.provider}) at ${JSON.stringify(agent.position)}`);
   }
 
   private handleAction(agent: Agent, action: AgentAction): void {
