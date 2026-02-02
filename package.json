@@ -15,7 +15,9 @@
     "clean": "npm run --workspaces --if-present clean"
   },
   "devDependencies": {
-    "typescript": "^5.3.3"
+    "@types/three": "^0.161.2",
+    "typescript": "^5.3.3",
+    "vite": "^7.3.1"
   },
   "engines": {
     "node": ">=20.0.0"

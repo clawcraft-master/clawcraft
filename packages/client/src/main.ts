@@ -241,12 +241,12 @@ function createChunkMesh(chunk: Chunk): void {
     for (let y = 0; y < CHUNK_SIZE; y++) {
       for (let z = 0; z < CHUNK_SIZE; z++) {
         const index = x + y * CHUNK_SIZE + z * CHUNK_SIZE * CHUNK_SIZE;
-        const blockId = chunk.blocks[index];
+        const blockId = chunk.blocks[index] as number;
         
         if (blockId === BlockTypes.AIR) continue;
         if (blockId === BlockTypes.WATER) continue; // Skip water for now
 
-        const def = BlockDefinitions[blockId];
+        const def = BlockDefinitions[blockId as keyof typeof BlockDefinitions];
         if (!def?.solid) continue;
 
         // Check neighbors to only render exposed faces
@@ -267,12 +267,12 @@ function createChunkMesh(chunk: Chunk): void {
           let neighborSolid = false;
           if (nx >= 0 && nx < CHUNK_SIZE && ny >= 0 && ny < CHUNK_SIZE && nz >= 0 && nz < CHUNK_SIZE) {
             const nIndex = nx + ny * CHUNK_SIZE + nz * CHUNK_SIZE * CHUNK_SIZE;
-            const nBlock = chunk.blocks[nIndex];
-            neighborSolid = BlockDefinitions[nBlock]?.solid ?? false;
+            const nBlock = chunk.blocks[nIndex] as number;
+            neighborSolid = BlockDefinitions[nBlock as keyof typeof BlockDefinitions]?.solid ?? false;
           }
 
           if (!neighborSolid) {
-            addFace(positions, colors, worldX + x, worldY + y, worldZ + z, dx, dy, dz, blockColors[blockId] ?? 0xff00ff);
+            addFace(positions, colors, worldX + x, worldY + y, worldZ + z, dx, dy, dz, blockColors[blockId as keyof typeof blockColors] ?? 0xff00ff);
           }
         }
       }
