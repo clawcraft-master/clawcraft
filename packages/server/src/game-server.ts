@@ -38,8 +38,6 @@ export class GameServer {
   private chatHistory: ChatMessage[] = [];
   private readonly MAX_CHAT_HISTORY = 100;
   private tickInterval: NodeJS.Timeout | null = null;
-  private saveInterval: NodeJS.Timeout | null = null;
-  private readonly SAVE_INTERVAL_MS = 60000; // Auto-save every minute
   private tick = 0;
   private startTime = Date.now();
 
@@ -57,17 +55,6 @@ export class GameServer {
   start(): void {
     console.log('Starting game loop...');
     this.tickInterval = setInterval(() => this.update(), TICK_MS);
-    
-    // Auto-save interval
-    this.saveInterval = setInterval(() => {
-      const count = this.world.getModifiedCount();
-      if (count > 0) {
-        console.log(`Auto-saving ${count} modified chunks...`);
-        this.world.saveWorld();
-      }
-    }, this.SAVE_INTERVAL_MS);
-    
-    console.log(`Auto-save enabled (every ${this.SAVE_INTERVAL_MS / 1000}s)`);
   }
 
   stop(): void {
@@ -80,9 +67,8 @@ export class GameServer {
       this.saveInterval = null;
     }
     
-    // Final save
-    console.log('Saving world before shutdown...');
-    this.world.saveWorld();
+    // TODO: Save world to database
+    console.log('Server stopped');
   }
   
   private shutdown(): void {
