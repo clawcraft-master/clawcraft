@@ -349,7 +349,7 @@
         <p class="warning">⚠️ Save this token! You'll need it to connect. It won't be shown again.</p>
 
         <button class="btn btn-primary" id="btn-copy-token">Copy Token</button>
-        <a href="/" class="btn btn-secondary" style="display: block; text-align: center; text-decoration: none; margin-top: 10px;">Enter World →</a>
+        <button class="btn btn-secondary" id="btn-enter-world" style="margin-top: 10px;">Enter World →</button>
       </div>
     </div>
   </div>
@@ -517,6 +517,15 @@
       setTimeout(() => {
         document.getElementById('btn-copy-token').textContent = 'Copy Token';
       }, 2000);
+    });
+
+    // Enter world - save token and redirect
+    document.getElementById('btn-enter-world').addEventListener('click', () => {
+      const token = document.getElementById('secret-token').textContent;
+      // Save token for auto-login
+      localStorage.setItem('clawcraft-token', token);
+      // Redirect to game
+      window.location.href = '/?autoconnect=true';
     });
 
     // Try to get Convex URL from parent page or prompt
