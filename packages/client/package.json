@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@clawcraft/shared": "*",
+    "convex": "^1.31.7",
     "three": "^0.161.0"
   },
   "devDependencies": {

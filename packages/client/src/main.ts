@@ -1,16 +1,31 @@
 import * as THREE from 'three';
 import { BlockTypes, BlockDefinitions, CHUNK_SIZE } from '@clawcraft/shared';
-import type { ServerMessage, ClientMessage, Agent, Chunk, AgentSnapshot, Vec3 } from '@clawcraft/shared';
+import type { Agent, Chunk, Vec3 } from '@clawcraft/shared';
+import {
+  initConvex,
+  authenticate,
+  subscribeToAgents,
+  subscribeToChunk,
+  subscribeToChat,
+  updatePosition,
+  sendChat,
+  loadChunks,
+  disconnect,
+  getMyAgentId,
+  type ConvexAgent,
+  type ConvexChunk,
+  type ConvexChatMessage,
+} from './convex-client';
 
 // ============================================================================
 // STATE
 // ============================================================================
 
-let ws: WebSocket | null = null;
-let myAgent: Agent | null = null;
-let agents: Map<string, Agent> = new Map();
+let myAgent: ConvexAgent | null = null;
+let agents: Map<string, ConvexAgent> = new Map();
 let chunks: Map<string, Chunk> = new Map();
 let spectatorMode = false;
+let connected = false;
 
 // Three.js
 let scene: THREE.Scene;
@@ -27,6 +42,15 @@ let mouseLocked = false;
 let yaw = 0;
 let pitch = 0;
 
+// Player physics (client-side prediction)
+let playerPosition = { x: 0, y: 64, z: 0 };
+let playerVelocity = { x: 0, y: 0, z: 0 };
+const GRAVITY = -0.02;
+const JUMP_FORCE = 0.3;
+const MOVE_SPEED = 0.15;
+const FRICTION = 0.8;
+let onGround = false;
+
 // Block interaction
 let selectedBlockIndex = 0;
 const hotbarBlocks = [
@@ -38,12 +62,19 @@ const hotbarBlocks = [
   BlockTypes.SAND,
 ];
 const raycaster = new THREE.Raycaster();
-raycaster.far = 10; // Max reach distance
+raycaster.far = 10;
 
 // Stats
 let lastTime = performance.now();
 let frames = 0;
 let fps = 0;
+
+// Position sync
+let lastPositionSync = 0;
+const POSITION_SYNC_INTERVAL = 50; // ms
+
+// Chunk subscriptions
+let chunkUnsubscribes: Map<string, () => void> = new Map();
 
 // ============================================================================
 // INITIALIZATION
@@ -52,8 +83,8 @@ let fps = 0;
 function init(): void {
   // Three.js setup
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x87ceeb); // Sky blue
-  scene.fog = new THREE.Fog(0x87ceeb, 50, 200); // Fog for atmosphere
+  scene.background = new THREE.Color(0x87ceeb);
+  scene.fog = new THREE.Fog(0x87ceeb, 50, 200);
 
   camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.set(0, 70, 0);
@@ -82,28 +113,10 @@ function init(): void {
   });
   
   // Block interaction
-  renderer.domElement.addEventListener('mousedown', (e) => {
-    if (!mouseLocked || spectatorMode || !myAgent) return;
-    
-    if (e.button === 0) {
-      // Left click - break block
-      const hit = raycastBlock(false);
-      if (hit) {
-        send({ type: 'action', action: { type: 'break_block', position: hit } });
-      }
-    } else if (e.button === 2) {
-      // Right click - place block
-      const hit = raycastBlock(true);
-      if (hit) {
-        send({ type: 'action', action: { type: 'place_block', position: hit, blockId: hotbarBlocks[selectedBlockIndex] as number } });
-      }
-    }
-  });
-  
-  // Prevent context menu on right click
+  renderer.domElement.addEventListener('mousedown', onBlockInteract);
   renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
   
-  // Hotbar selection with number keys
+  // Hotbar selection
   document.addEventListener('keydown', (e) => {
     if (document.activeElement?.tagName === 'INPUT') return;
     const num = parseInt(e.key);
@@ -112,6 +125,7 @@ function init(): void {
       updateHotbar();
     }
   });
+  
   document.addEventListener('pointerlockchange', () => {
     mouseLocked = document.pointerLockElement === renderer.domElement;
   });
@@ -122,11 +136,11 @@ function init(): void {
 
   // Chat input
   const chatInput = document.getElementById('chat-input') as HTMLInputElement;
-  chatInput.addEventListener('keydown', (e) => {
-    e.stopPropagation(); // Don't trigger movement keys while typing
+  chatInput.addEventListener('keydown', async (e) => {
+    e.stopPropagation();
     if (e.key === 'Enter' && chatInput.value.trim()) {
       if (!spectatorMode && myAgent) {
-        send({ type: 'chat', message: chatInput.value.trim() });
+        await sendChat(chatInput.value.trim());
       } else if (spectatorMode) {
         addChatMessage('System', 'Spectators cannot chat. Connect as an agent to chat.');
       }
@@ -137,7 +151,7 @@ function init(): void {
     }
   });
 
-  // Press T or Enter to focus chat (when not already focused)
+  // Press T or Enter to focus chat
   document.addEventListener('keydown', (e) => {
     if (document.activeElement !== chatInput && (e.key === 't' || e.key === 'T' || e.key === 'Enter')) {
       if (document.getElementById('connect-modal')!.style.display !== 'none') return;
@@ -150,151 +164,366 @@ function init(): void {
   animate();
 }
 
-function connect(spectate: boolean): void {
-  const nameInput = document.getElementById('agent-name') as HTMLInputElement;
-  const name = nameInput.value || `Spectator-${Math.random().toString(36).slice(2, 8)}`;
+async function connect(spectate: boolean): Promise<void> {
+  const tokenInput = document.getElementById('agent-name') as HTMLInputElement;
+  const token = tokenInput.value.trim();
+  
+  if (!token && !spectate) {
+    alert('Please enter your secret token');
+    return;
+  }
+  
   spectatorMode = spectate;
 
-  const serverUrl = import.meta.env.VITE_SERVER_URL || 'ws://localhost:3001';
-  ws = new WebSocket(serverUrl);
+  try {
+    // Initialize Convex
+    const convexUrl = import.meta.env.VITE_CONVEX_URL;
+    if (!convexUrl) {
+      throw new Error('VITE_CONVEX_URL not set');
+    }
+    initConvex(convexUrl);
 
-  ws.onopen = () => {
-    console.log('Connected to server');
-    send({ type: 'auth', token: name });
+    if (!spectate) {
+      // Authenticate
+      const agent = await authenticate(token);
+      if (!agent) {
+        alert('Invalid token. Please check your secret token.');
+        return;
+      }
+      myAgent = agent;
+      playerPosition = agent.position || { x: 0, y: 64, z: 0 };
+      camera.position.set(playerPosition.x, playerPosition.y + 1.6, playerPosition.z);
+      addChatMessage('System', `Welcome back, ${agent.username}!`);
+    } else {
+      addChatMessage('System', 'Spectating... Use WASD + Space/Shift to fly');
+    }
+
+    // Subscribe to real-time updates
+    setupSubscriptions();
+
+    // Load initial chunks around player
+    await loadInitialChunks();
+
+    connected = true;
     document.getElementById('connect-modal')!.style.display = 'none';
+    
     if (!spectate) {
       updateHotbar();
     }
-  };
-
-  ws.onmessage = (event) => {
-    const msg: ServerMessage = JSON.parse(event.data);
-    handleMessage(msg);
-  };
-
-  ws.onclose = () => {
-    console.log('Disconnected');
-    document.getElementById('connect-modal')!.style.display = 'block';
-  };
-}
-
-// ============================================================================
-// NETWORKING
-// ============================================================================
-
-function send(msg: ClientMessage): void {
-  if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg));
+  } catch (err: any) {
+    console.error('Connection failed:', err);
+    alert('Connection failed: ' + err.message);
   }
 }
 
-function handleMessage(msg: ServerMessage): void {
-  switch (msg.type) {
-    case 'auth_success':
-      myAgent = msg.agent;
-      camera.position.set(msg.agent.position.x, msg.agent.position.y + 1.6, msg.agent.position.z);
-      break;
-
-    case 'world_state':
-      for (const agent of msg.agents) {
-        agents.set(agent.id, agent);
-        createAgentMesh(agent);
-      }
-      updateAgentList();
-      // Load chat history
-      if (msg.chatHistory) {
-        for (const chatMsg of msg.chatHistory) {
-          addChatMessage(chatMsg.senderName, chatMsg.text);
-        }
-      }
-      break;
-
-    case 'chat':
-      addChatMessage(msg.message.senderName, msg.message.text);
-      break;
-
-    case 'chunk_data':
-      chunks.set(chunkKey(msg.chunk.coord), msg.chunk);
-      createChunkMesh(msg.chunk);
-      break;
-
-    case 'tick':
-      updateTick(msg.tick, msg.agents);
-      break;
-
-    case 'event':
-      handleEvent(msg.event);
-      break;
-  }
-}
-
-function handleEvent(event: any): void {
-  switch (event.type) {
-    case 'agent_joined':
-      agents.set(event.agent.id, event.agent);
-      createAgentMesh(event.agent);
-      updateAgentList();
-      addChatMessage('System', `${event.agent.name} joined the world`);
-      break;
-
-    case 'agent_left':
-      const leftAgent = agents.get(event.agentId);
-      if (leftAgent) {
-        addChatMessage('System', `${leftAgent.name} left the world`);
-      }
-      agents.delete(event.agentId);
-      removeAgentMesh(event.agentId);
-      updateAgentList();
-      break;
-
-    case 'block_placed':
-    case 'block_broken':
-      // Refresh affected chunk
-      const coord = {
-        cx: Math.floor(event.position.x / CHUNK_SIZE),
-        cy: Math.floor(event.position.y / CHUNK_SIZE),
-        cz: Math.floor(event.position.z / CHUNK_SIZE),
-      };
-      send({ type: 'request_chunks', coords: [coord] });
-      break;
-
-    case 'chat':
-      const chatAgent = agents.get(event.agentId);
-      addChatMessage(chatAgent?.name || 'Unknown', event.message);
-      break;
-  }
-}
-
-function updateTick(tick: number, snapshots: AgentSnapshot[]): void {
-  document.getElementById('tick')!.textContent = tick.toString();
-
-  for (const snap of snapshots) {
-    const agent = agents.get(snap.id);
-    if (agent) {
-      agent.position = snap.position;
-      agent.rotation = snap.rotation;
-      agent.velocity = snap.velocity;
-
-      // Update mesh position
-      const mesh = agentMeshes.get(snap.id);
-      if (mesh) {
-        mesh.position.set(snap.position.x, snap.position.y + 0.9, snap.position.z);
-      }
+function setupSubscriptions(): void {
+  // Subscribe to online agents
+  subscribeToAgents((agentList) => {
+    const oldAgents = new Set(agents.keys());
+    
+    for (const agent of agentList) {
+      const id = agent._id;
+      const existing = agents.get(id);
       
-      // Update label position
-      const label = agentLabels.get(snap.id);
-      if (label) {
-        label.position.set(snap.position.x, snap.position.y + 2.5, snap.position.z);
+      if (!existing) {
+        // New agent joined
+        agents.set(id, agent);
+        createAgentMesh(agent);
+        if (connected) {
+          addChatMessage('System', `${agent.username} joined the world`);
+        }
+      } else {
+        // Update existing agent
+        agents.set(id, agent);
+        updateAgentMesh(agent);
       }
+      oldAgents.delete(id);
+    }
+    
+    // Remove agents that left
+    for (const id of oldAgents) {
+      const leftAgent = agents.get(id);
+      if (leftAgent) {
+        addChatMessage('System', `${leftAgent.username} left the world`);
+      }
+      agents.delete(id);
+      removeAgentMesh(id);
+    }
+    
+    updateAgentList();
+    document.getElementById('agent-count')!.textContent = agents.size.toString();
+  });
 
-      // Update camera if this is our agent
-      if (myAgent && snap.id === myAgent.id && !spectatorMode) {
-        camera.position.set(snap.position.x, snap.position.y + 1.6, snap.position.z);
+  // Subscribe to chat
+  subscribeToChat((messages) => {
+    const container = document.getElementById('chat-messages')!;
+    container.innerHTML = '';
+    
+    for (const msg of messages) {
+      addChatMessageDirect(msg.senderName, msg.message);
+    }
+  });
+}
+
+async function loadInitialChunks(): Promise<void> {
+  const cx = Math.floor(playerPosition.x / CHUNK_SIZE);
+  const cy = Math.floor(playerPosition.y / CHUNK_SIZE);
+  const cz = Math.floor(playerPosition.z / CHUNK_SIZE);
+  
+  const radius = 3;
+  const keys: string[] = [];
+  
+  for (let dx = -radius; dx <= radius; dx++) {
+    for (let dy = -1; dy <= 2; dy++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        keys.push(`${cx + dx},${cy + dy},${cz + dz}`);
       }
     }
   }
+  
+  // Load chunks and subscribe to updates
+  const loadedChunks = await loadChunks(keys);
+  
+  for (const [key, chunk] of Object.entries(loadedChunks)) {
+    if (chunk) {
+      handleChunkData(chunk);
+      subscribeToChunkUpdates(key);
+    }
+  }
+}
 
-  document.getElementById('agent-count')!.textContent = agents.size.toString();
+function subscribeToChunkUpdates(key: string): void {
+  if (chunkUnsubscribes.has(key)) return;
+  
+  const unsub = subscribeToChunk(key, (chunk) => {
+    handleChunkData(chunk);
+  });
+  chunkUnsubscribes.set(key, unsub);
+}
+
+function handleChunkData(convexChunk: ConvexChunk): void {
+  // Decode base64 blocks
+  const binaryString = atob(convexChunk.blocksBase64);
+  const blocks = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    blocks[i] = binaryString.charCodeAt(i);
+  }
+  
+  const chunk: Chunk = {
+    coord: { cx: convexChunk.cx, cy: convexChunk.cy, cz: convexChunk.cz },
+    blocks,
+  };
+  
+  chunks.set(convexChunk.key, chunk);
+  createChunkMesh(chunk);
+}
+
+// ============================================================================
+// BLOCK INTERACTION
+// ============================================================================
+
+function onBlockInteract(e: MouseEvent): void {
+  if (!mouseLocked || spectatorMode || !myAgent) return;
+  
+  if (e.button === 0) {
+    // Left click - break block
+    const hit = raycastBlock(false);
+    if (hit) {
+      breakBlockAt(hit.x, hit.y, hit.z);
+    }
+  } else if (e.button === 2) {
+    // Right click - place block
+    const hit = raycastBlock(true);
+    if (hit) {
+      placeBlockAt(hit.x, hit.y, hit.z, hotbarBlocks[selectedBlockIndex] as number);
+    }
+  }
+}
+
+async function placeBlockAt(x: number, y: number, z: number, blockType: number): Promise<void> {
+  const cx = Math.floor(x / CHUNK_SIZE);
+  const cy = Math.floor(y / CHUNK_SIZE);
+  const cz = Math.floor(z / CHUNK_SIZE);
+  const key = `${cx},${cy},${cz}`;
+  
+  const chunk = chunks.get(key);
+  if (!chunk) return;
+  
+  // Local update
+  const localX = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+  const localY = ((y % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+  const localZ = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+  const index = localX + localY * CHUNK_SIZE + localZ * CHUNK_SIZE * CHUNK_SIZE;
+  
+  chunk.blocks[index] = blockType;
+  createChunkMesh(chunk);
+  
+  // Sync to Convex
+  const { placeBlock } = await import('./convex-client');
+  const blocksBase64 = btoa(String.fromCharCode(...chunk.blocks));
+  await placeBlock(x, y, z, blockType, key, cx, cy, cz, blocksBase64);
+}
+
+async function breakBlockAt(x: number, y: number, z: number): Promise<void> {
+  const cx = Math.floor(x / CHUNK_SIZE);
+  const cy = Math.floor(y / CHUNK_SIZE);
+  const cz = Math.floor(z / CHUNK_SIZE);
+  const key = `${cx},${cy},${cz}`;
+  
+  const chunk = chunks.get(key);
+  if (!chunk) return;
+  
+  // Local update
+  const localX = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+  const localY = ((y % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+  const localZ = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+  const index = localX + localY * CHUNK_SIZE + localZ * CHUNK_SIZE * CHUNK_SIZE;
+  
+  chunk.blocks[index] = BlockTypes.AIR;
+  createChunkMesh(chunk);
+  
+  // Sync to Convex
+  const { breakBlock } = await import('./convex-client');
+  const blocksBase64 = btoa(String.fromCharCode(...chunk.blocks));
+  await breakBlock(x, y, z, key, blocksBase64);
+}
+
+function raycastBlock(placeMode: boolean): Vec3 | null {
+  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+  
+  const meshes = Array.from(chunkMeshes.values());
+  const intersects = raycaster.intersectObjects(meshes);
+  
+  if (intersects.length === 0) return null;
+  
+  const hit = intersects[0];
+  const point = hit.point;
+  const normal = hit.face?.normal;
+  
+  if (!normal) return null;
+  
+  if (placeMode) {
+    return {
+      x: Math.floor(point.x + normal.x * 0.5),
+      y: Math.floor(point.y + normal.y * 0.5),
+      z: Math.floor(point.z + normal.z * 0.5),
+    };
+  } else {
+    return {
+      x: Math.floor(point.x - normal.x * 0.5),
+      y: Math.floor(point.y - normal.y * 0.5),
+      z: Math.floor(point.z - normal.z * 0.5),
+    };
+  }
+}
+
+// ============================================================================
+// PHYSICS & INPUT
+// ============================================================================
+
+function processInput(): void {
+  if (spectatorMode) {
+    // Spectator fly-cam
+    const speed = 0.5;
+    let dx = 0, dy = 0, dz = 0;
+    
+    if (keys.has('KeyW')) dz -= 1;
+    if (keys.has('KeyS')) dz += 1;
+    if (keys.has('KeyA')) dx -= 1;
+    if (keys.has('KeyD')) dx += 1;
+    if (keys.has('Space')) dy += 1;
+    if (keys.has('ShiftLeft') || keys.has('ShiftRight')) dy -= 1;
+
+    if (dx !== 0 || dy !== 0 || dz !== 0) {
+      const sin = Math.sin(yaw);
+      const cos = Math.cos(yaw);
+      
+      camera.position.x += (dx * cos - dz * sin) * speed;
+      camera.position.y += dy * speed;
+      camera.position.z += (dx * sin + dz * cos) * speed;
+    }
+    return;
+  }
+
+  if (!myAgent) return;
+
+  // Movement input
+  let moveX = 0, moveZ = 0;
+  
+  if (keys.has('KeyW')) moveZ -= 1;
+  if (keys.has('KeyS')) moveZ += 1;
+  if (keys.has('KeyA')) moveX -= 1;
+  if (keys.has('KeyD')) moveX += 1;
+
+  if (moveX !== 0 || moveZ !== 0) {
+    const sin = Math.sin(yaw);
+    const cos = Math.cos(yaw);
+    
+    const len = Math.sqrt(moveX ** 2 + moveZ ** 2);
+    moveX /= len;
+    moveZ /= len;
+    
+    playerVelocity.x += (moveX * cos - moveZ * sin) * MOVE_SPEED;
+    playerVelocity.z += (moveX * sin + moveZ * cos) * MOVE_SPEED;
+  }
+
+  // Jump
+  if (keys.has('Space') && onGround) {
+    playerVelocity.y = JUMP_FORCE;
+    onGround = false;
+  }
+
+  // Apply gravity
+  playerVelocity.y += GRAVITY;
+
+  // Apply friction
+  playerVelocity.x *= FRICTION;
+  playerVelocity.z *= FRICTION;
+
+  // Update position
+  playerPosition.x += playerVelocity.x;
+  playerPosition.y += playerVelocity.y;
+  playerPosition.z += playerVelocity.z;
+
+  // Simple ground collision (y = 64 is ground level for now)
+  // TODO: Proper collision detection with blocks
+  if (playerPosition.y < 64) {
+    playerPosition.y = 64;
+    playerVelocity.y = 0;
+    onGround = true;
+  }
+
+  // Update camera
+  camera.position.set(playerPosition.x, playerPosition.y + 1.6, playerPosition.z);
+
+  // Sync position to server
+  const now = performance.now();
+  if (now - lastPositionSync > POSITION_SYNC_INTERVAL) {
+    lastPositionSync = now;
+    updatePosition(
+      { x: playerPosition.x, y: playerPosition.y, z: playerPosition.z },
+      { x: pitch, y: yaw, z: 0 }
+    ).catch(console.error);
+  }
+}
+
+function onResize(): void {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function onMouseMove(event: MouseEvent): void {
+  if (!mouseLocked) return;
+
+  const sensitivity = 0.002;
+  yaw -= event.movementX * sensitivity;
+  pitch -= event.movementY * sensitivity;
+  pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
 }
 
 // ============================================================================
@@ -316,7 +545,7 @@ const blockColors: Record<number, number> = {
 };
 
 function createChunkMesh(chunk: Chunk): void {
-  const key = chunkKey(chunk.coord);
+  const key = `${chunk.coord.cx},${chunk.coord.cy},${chunk.coord.cz}`;
   
   // Remove old meshes
   const oldMesh = chunkMeshes.get(key);
@@ -349,9 +578,7 @@ function createChunkMesh(chunk: Chunk): void {
         
         if (blockId === BlockTypes.AIR) continue;
         
-        // Handle water separately
         if (blockId === BlockTypes.WATER) {
-          // Only render top face of water
           const aboveIndex = x + (y + 1) * CHUNK_SIZE + z * CHUNK_SIZE * CHUNK_SIZE;
           const aboveBlock = y + 1 < CHUNK_SIZE ? chunk.blocks[aboveIndex] : BlockTypes.AIR;
           if (aboveBlock === BlockTypes.AIR) {
@@ -362,7 +589,6 @@ function createChunkMesh(chunk: Chunk): void {
 
         const def = BlockDefinitions[blockId as keyof typeof BlockDefinitions];
         
-        // Handle decoration blocks (flowers, grass)
         if (!def?.solid) {
           if (blockId === BlockTypes.FLOWER_RED || blockId === BlockTypes.FLOWER_YELLOW || blockId === BlockTypes.TALL_GRASS) {
             addDecorationBlock(positions, colors, worldX + x, worldY + y, worldZ + z, blockColors[blockId as keyof typeof blockColors] ?? 0xff00ff);
@@ -370,7 +596,6 @@ function createChunkMesh(chunk: Chunk): void {
           continue;
         }
 
-        // Check neighbors to only render exposed faces
         const neighbors: [number, number, number][] = [
           [1, 0, 0], [-1, 0, 0],
           [0, 1, 0], [0, -1, 0],
@@ -378,9 +603,7 @@ function createChunkMesh(chunk: Chunk): void {
         ];
 
         for (const neighbor of neighbors) {
-          const dx = neighbor[0];
-          const dy = neighbor[1];
-          const dz = neighbor[2];
+          const [dx, dy, dz] = neighbor;
           const nx = x + dx;
           const ny = y + dy;
           const nz = z + dz;
@@ -401,7 +624,6 @@ function createChunkMesh(chunk: Chunk): void {
     }
   }
 
-  // Create solid mesh
   if (positions.length > 0) {
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
@@ -413,7 +635,6 @@ function createChunkMesh(chunk: Chunk): void {
     chunkMeshes.set(key, mesh);
   }
 
-  // Create water mesh
   if (waterPositions.length > 0) {
     waterGeometry.setAttribute('position', new THREE.Float32BufferAttribute(waterPositions, 3));
     waterGeometry.computeVertexNormals();
@@ -431,7 +652,6 @@ function createChunkMesh(chunk: Chunk): void {
 }
 
 function addWaterFace(positions: number[], x: number, y: number, z: number): void {
-  // Slightly lower water surface for visual effect
   const waterY = y + 0.9;
   positions.push(
     x, waterY, z,
@@ -448,12 +668,10 @@ function addDecorationBlock(positions: number[], colors: number[], x: number, y:
   const g = ((color >> 8) & 255) / 255;
   const b = (color & 255) / 255;
   
-  // Cross-hatched pattern (two diagonal planes)
   const cx = x + 0.5;
   const cz = z + 0.5;
-  const h = 0.8; // Height of decoration
+  const h = 0.8;
   
-  // Diagonal 1 (NW-SE)
   positions.push(
     cx - 0.4, y, cz - 0.4,
     cx - 0.4, y + h, cz - 0.4,
@@ -463,7 +681,6 @@ function addDecorationBlock(positions: number[], colors: number[], x: number, y:
     cx + 0.4, y, cz + 0.4,
   );
   
-  // Diagonal 2 (NE-SW)
   positions.push(
     cx + 0.4, y, cz - 0.4,
     cx + 0.4, y + h, cz - 0.4,
@@ -473,7 +690,6 @@ function addDecorationBlock(positions: number[], colors: number[], x: number, y:
     cx - 0.4, y, cz + 0.4,
   );
   
-  // Add colors for 12 vertices (2 triangles * 2 quads)
   for (let i = 0; i < 12; i++) {
     colors.push(r, g, b);
   }
@@ -490,7 +706,6 @@ function addFace(
   const g = ((color >> 8) & 255) / 255;
   const b = (color & 255) / 255;
 
-  // Face vertices based on normal direction
   let vertices: [number, number, number][];
 
   if (dx === 1) {
@@ -531,22 +746,39 @@ function addFace(
   }
 }
 
-function createAgentMesh(agent: Agent): void {
-  if (agentMeshes.has(agent.id)) return;
+function createAgentMesh(agent: ConvexAgent): void {
+  if (agentMeshes.has(agent._id)) return;
+  if (myAgent && agent._id === myAgent._id) return; // Don't render self
 
   const geometry = new THREE.BoxGeometry(0.6, 1.8, 0.6);
   const material = new THREE.MeshLambertMaterial({ color: 0x4ecdc4 });
   const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(agent.position.x, agent.position.y + 0.9, agent.position.z);
+  
+  const pos = agent.position || { x: 0, y: 64, z: 0 };
+  mesh.position.set(pos.x, pos.y + 0.9, pos.z);
   
   scene.add(mesh);
-  agentMeshes.set(agent.id, mesh);
+  agentMeshes.set(agent._id, mesh);
   
-  // Create name label
-  const label = createNameLabel(agent.name);
-  label.position.set(agent.position.x, agent.position.y + 2.5, agent.position.z);
+  const label = createNameLabel(agent.username);
+  label.position.set(pos.x, pos.y + 2.5, pos.z);
   scene.add(label);
-  agentLabels.set(agent.id, label);
+  agentLabels.set(agent._id, label);
+}
+
+function updateAgentMesh(agent: ConvexAgent): void {
+  if (myAgent && agent._id === myAgent._id) return;
+  
+  const mesh = agentMeshes.get(agent._id);
+  const label = agentLabels.get(agent._id);
+  const pos = agent.position || { x: 0, y: 64, z: 0 };
+  
+  if (mesh) {
+    mesh.position.set(pos.x, pos.y + 0.9, pos.z);
+  }
+  if (label) {
+    label.position.set(pos.x, pos.y + 2.5, pos.z);
+  }
 }
 
 function createNameLabel(name: string): THREE.Sprite {
@@ -555,12 +787,10 @@ function createNameLabel(name: string): THREE.Sprite {
   canvas.width = 256;
   canvas.height = 64;
   
-  // Background
   ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
   ctx.roundRect(0, 16, canvas.width, 40, 8);
   ctx.fill();
   
-  // Text
   ctx.font = 'bold 28px Arial';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -595,129 +825,45 @@ function removeAgentMesh(agentId: string): void {
   }
 }
 
-function chunkKey(coord: { cx: number; cy: number; cz: number }): string {
-  return `${coord.cx},${coord.cy},${coord.cz}`;
-}
-
 // ============================================================================
-// INPUT
+// UI
 // ============================================================================
 
-function onResize(): void {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-}
-
-function onMouseMove(event: MouseEvent): void {
-  if (!mouseLocked) return;
-
-  const sensitivity = 0.002;
-  yaw -= event.movementX * sensitivity;
-  pitch -= event.movementY * sensitivity;
-  pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
-
-  camera.rotation.order = 'YXZ';
-  camera.rotation.y = yaw;
-  camera.rotation.x = pitch;
-
-  // Only send look action if not spectator
-  if (!spectatorMode) {
-    send({ type: 'action', action: { type: 'look', pitch, yaw } });
+function updateAgentList(): void {
+  const container = document.getElementById('agents')!;
+  container.innerHTML = '';
+  
+  for (const agent of agents.values()) {
+    const div = document.createElement('div');
+    div.className = 'agent-item';
+    div.textContent = agent.username + (myAgent && agent._id === myAgent._id ? ' (you)' : '');
+    container.appendChild(div);
   }
 }
 
-function processInput(): void {
-  // Spectator fly-cam controls
-  if (spectatorMode) {
-    const speed = 0.5;
-    let dx = 0, dy = 0, dz = 0;
-    
-    if (keys.has('KeyW')) dz -= 1;
-    if (keys.has('KeyS')) dz += 1;
-    if (keys.has('KeyA')) dx -= 1;
-    if (keys.has('KeyD')) dx += 1;
-    if (keys.has('Space')) dy += 1;
-    if (keys.has('ShiftLeft') || keys.has('ShiftRight')) dy -= 1;
-
-    if (dx !== 0 || dy !== 0 || dz !== 0) {
-      const sin = Math.sin(yaw);
-      const cos = Math.cos(yaw);
-      
-      camera.position.x += (dx * cos - dz * sin) * speed;
-      camera.position.y += dy * speed;
-      camera.position.z += (dx * sin + dz * cos) * speed;
-    }
-    return;
-  }
-
-  if (!myAgent) return;
-
-  let dx = 0, dz = 0;
-  
-  if (keys.has('KeyW')) dz -= 1;
-  if (keys.has('KeyS')) dz += 1;
-  if (keys.has('KeyA')) dx -= 1;
-  if (keys.has('KeyD')) dx += 1;
-
-  if (dx !== 0 || dz !== 0) {
-    // Rotate direction by camera yaw
-    const sin = Math.sin(yaw);
-    const cos = Math.cos(yaw);
-    const direction = {
-      x: dx * cos - dz * sin,
-      y: 0,
-      z: dx * sin + dz * cos,
-    };
-    
-    // Normalize
-    const len = Math.sqrt(direction.x ** 2 + direction.z ** 2);
-    direction.x /= len;
-    direction.z /= len;
-
-    send({ type: 'action', action: { type: 'move', direction } });
-  }
-
-  if (keys.has('Space')) {
-    send({ type: 'action', action: { type: 'jump' } });
-    keys.delete('Space');
-  }
+function addChatMessage(name: string, message: string): void {
+  const container = document.getElementById('chat-messages')!;
+  addChatMessageDirect(name, message);
+  container.scrollTop = container.scrollHeight;
 }
 
-// ============================================================================
-// BLOCK INTERACTION
-// ============================================================================
-
-function raycastBlock(placeMode: boolean): { x: number; y: number; z: number } | null {
-  // Cast ray from camera center
-  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+function addChatMessageDirect(name: string, message: string): void {
+  const container = document.getElementById('chat-messages')!;
+  const div = document.createElement('div');
+  div.className = 'chat-message';
   
-  // Get all chunk meshes
-  const meshes = Array.from(chunkMeshes.values());
-  const intersects = raycaster.intersectObjects(meshes);
-  
-  if (intersects.length === 0) return null;
-  
-  const hit = intersects[0];
-  const point = hit.point;
-  const normal = hit.face?.normal;
-  
-  if (!normal) return null;
-  
-  if (placeMode) {
-    // Place block on the face we hit
-    return {
-      x: Math.floor(point.x + normal.x * 0.5),
-      y: Math.floor(point.y + normal.y * 0.5),
-      z: Math.floor(point.z + normal.z * 0.5),
-    };
+  if (name === 'System') {
+    div.innerHTML = `<span class="system">* ${message}</span>`;
   } else {
-    // Break the block we hit
-    return {
-      x: Math.floor(point.x - normal.x * 0.5),
-      y: Math.floor(point.y - normal.y * 0.5),
-      z: Math.floor(point.z - normal.z * 0.5),
-    };
+    const safeName = name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeMsg = message.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    div.innerHTML = `<span class="name">${safeName}:</span> ${safeMsg}`;
+  }
+  
+  container.appendChild(div);
+
+  while (container.children.length > 50) {
+    container.removeChild(container.firstChild!);
   }
 }
 
@@ -738,52 +884,12 @@ function updateHotbar(): void {
 }
 
 // ============================================================================
-// UI
-// ============================================================================
-
-function updateAgentList(): void {
-  const container = document.getElementById('agents')!;
-  container.innerHTML = '';
-  
-  for (const agent of agents.values()) {
-    const div = document.createElement('div');
-    div.className = 'agent-item';
-    div.textContent = agent.name + (agent.id === myAgent?.id ? ' (you)' : '');
-    container.appendChild(div);
-  }
-}
-
-function addChatMessage(name: string, message: string): void {
-  const container = document.getElementById('chat-messages')!;
-  const div = document.createElement('div');
-  div.className = 'chat-message';
-  
-  if (name === 'System') {
-    div.innerHTML = `<span class="system">* ${message}</span>`;
-  } else {
-    // Escape HTML to prevent XSS
-    const safeName = name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const safeMsg = message.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    div.innerHTML = `<span class="name">${safeName}:</span> ${safeMsg}`;
-  }
-  
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-
-  // Limit messages shown
-  while (container.children.length > 50) {
-    container.removeChild(container.firstChild!);
-  }
-}
-
-// ============================================================================
 // MAIN LOOP
 // ============================================================================
 
 function animate(): void {
   requestAnimationFrame(animate);
 
-  // FPS counter
   frames++;
   const now = performance.now();
   if (now - lastTime >= 1000) {
@@ -793,25 +899,30 @@ function animate(): void {
     document.getElementById('fps')!.textContent = fps.toString();
   }
 
-  processInput();
+  if (connected) {
+    processInput();
+  }
+  
   renderer.render(scene, camera);
 }
 
-// Cleanup function for when user goes back to landing
 function cleanup(): void {
-  if (ws) {
-    ws.close();
-    ws = null;
-  }
+  disconnect();
   myAgent = null;
   spectatorMode = false;
+  connected = false;
   
-  // Show connect modal again for next entry
+  // Cleanup chunk subscriptions
+  for (const unsub of chunkUnsubscribes.values()) {
+    unsub();
+  }
+  chunkUnsubscribes.clear();
+  
   const modal = document.getElementById('connect-modal');
   if (modal) modal.style.display = 'block';
 }
 
-// Expose functions to window for landing page
+// Expose functions to window
 let initialized = false;
 
 (window as any).initGame = () => {
@@ -819,7 +930,6 @@ let initialized = false;
     init();
     initialized = true;
   } else {
-    // Just show the connect modal again
     const modal = document.getElementById('connect-modal');
     if (modal) modal.style.display = 'block';
   }
@@ -827,7 +937,7 @@ let initialized = false;
 
 (window as any).cleanupGame = cleanup;
 
-// Auto-init if landing page is hidden (direct game access)
+// Auto-init
 if (!document.getElementById('landing') || document.getElementById('landing')?.classList.contains('hidden')) {
   init();
   initialized = true;

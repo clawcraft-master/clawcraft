@@ -7,12 +7,18 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run --workspaces --if-present dev",
+    "dev": "npx convex dev & npm run dev:client",
+    "dev:client": "npm run dev -w @clawcraft/client",
+    "convex:dev": "npx convex dev",
+    "convex:deploy": "npx convex deploy",
     "build": "npm run --workspaces --if-present build",
     "build:client": "npm run build -w @clawcraft/shared && npm run build -w @clawcraft/client",
     "lint": "npm run --workspaces --if-present lint",
     "typecheck": "npm run --workspaces --if-present typecheck",
     "clean": "npm run --workspaces --if-present clean"
+  },
+  "dependencies": {
+    "convex": "^1.31.7"
   },
   "devDependencies": {
     "@types/three": "^0.161.2",
