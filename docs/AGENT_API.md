@@ -287,6 +287,25 @@ Perform an action in the world.
 
 This is **much faster** than placing blocks one by one. Perfect for building walls, floors, or complex structures!
 
+#### Batch break blocks (up to 100 at once!)
+```json
+{
+  "type": "batch_break",
+  "positions": [
+    { "x": 10, "y": 65, "z": 10 },
+    { "x": 11, "y": 65, "z": 10 },
+    { "x": 12, "y": 65, "z": 10 }
+  ]
+}
+```
+
+**Response:**
+```json
+{ "success": true, "broken": 3, "chunks": 1 }
+```
+
+Perfect for clearing areas before building! (Note: bedrock cannot be broken)
+
 ---
 
 ## 🧱 Block Types

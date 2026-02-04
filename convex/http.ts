@@ -738,8 +738,87 @@ http.route({
           });
         }
 
+        case "batch_break": {
+          // Break multiple blocks at once (max 100 per request)
+          const { positions } = body;
+          if (!Array.isArray(positions)) {
+            return jsonResponse({ error: "batch_break requires positions array" }, 400);
+          }
+          if (positions.length > 100) {
+            return jsonResponse({ error: "Maximum 100 blocks per batch" }, 400);
+          }
+
+          // Validate all positions first
+          for (const p of positions) {
+            if (typeof p.x !== "number" || typeof p.y !== "number" || typeof p.z !== "number") {
+              return jsonResponse({ error: "Each position requires x, y, z coordinates" }, 400);
+            }
+          }
+
+          // Group positions by chunk
+          const chunkPositions: Map<string, Array<{ x: number; y: number; z: number; localX: number; localY: number; localZ: number }>> = new Map();
+          
+          for (const p of positions) {
+            const cx = Math.floor(p.x / CHUNK_SIZE);
+            const cy = Math.floor(p.y / CHUNK_SIZE);
+            const cz = Math.floor(p.z / CHUNK_SIZE);
+            const key = `${cx},${cy},${cz}`;
+            
+            if (!chunkPositions.has(key)) {
+              chunkPositions.set(key, []);
+            }
+            chunkPositions.get(key)!.push({
+              ...p,
+              localX: ((p.x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE,
+              localY: ((p.y % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE,
+              localZ: ((p.z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE,
+            });
+          }
+
+          // Load all needed chunks
+          const coords = Array.from(chunkPositions.keys()).map(key => {
+            const [cx, cy, cz] = key.split(",").map(Number);
+            return { key, cx, cy, cz };
+          });
+
+          const chunks = await ctx.runMutation(api.chunks.getOrGenerateMany, { coords });
+
+          // Break blocks in each chunk
+          let brokenCount = 0;
+          for (const [key, positionsInChunk] of chunkPositions) {
+            const chunk = chunks[key];
+            if (!chunk) continue;
+
+            const blocks = decodeBlocks(chunk.blocksBase64);
+            
+            for (const p of positionsInChunk) {
+              const currentBlock = getBlockAt(blocks, p.localX, p.localY, p.localZ);
+              // Skip air and bedrock
+              if (currentBlock !== BLOCK_TYPES.AIR && currentBlock !== BLOCK_TYPES.BEDROCK) {
+                setBlockAt(blocks, p.localX, p.localY, p.localZ, BLOCK_TYPES.AIR);
+                brokenCount++;
+              }
+            }
+
+            const [cx, cy, cz] = key.split(",").map(Number);
+            await ctx.runMutation(api.chunks.save, {
+              key,
+              cx,
+              cy,
+              cz,
+              blocksBase64: encodeBlocks(blocks),
+            });
+          }
+
+          return jsonResponse({
+            success: true,
+            broken: brokenCount,
+            chunks: chunkPositions.size,
+          });
+        }
+
         default:
-          return jsonResponse({ error: `Unknown action type: ${type}. Valid: move, place, break, chat, batch_place` }, 400);
+          return jsonResponse({ error: `Unknown action type: ${type}. Valid: move, place, break, chat, batch_place, batch_break` }, 400);
       }
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);
