@@ -69,6 +69,10 @@ let lastTime = performance.now();
 let frames = 0;
 let fps = 0;
 
+// Block highlight
+let blockHighlight: THREE.LineSegments | null = null;
+let lastHighlightPos: Vec3 | null = null;
+
 // Position sync
 let lastPositionSync = 0;
 const POSITION_SYNC_INTERVAL = 50; // ms
@@ -185,6 +189,19 @@ function init(): void {
   const sun = new THREE.DirectionalLight(0xffffff, 0.8);
   sun.position.set(100, 200, 100);
   scene.add(sun);
+
+  // Block highlight (wireframe cube)
+  const highlightGeometry = new THREE.BoxGeometry(1.01, 1.01, 1.01);
+  const highlightEdges = new THREE.EdgesGeometry(highlightGeometry);
+  const highlightMaterial = new THREE.LineBasicMaterial({ 
+    color: 0x000000, 
+    linewidth: 2,
+    transparent: true,
+    opacity: 0.8 
+  });
+  blockHighlight = new THREE.LineSegments(highlightEdges, highlightMaterial);
+  blockHighlight.visible = false;
+  scene.add(blockHighlight);
 
   // Event listeners
   window.addEventListener('resize', onResize);
@@ -1021,9 +1038,30 @@ function animate(): void {
 
   if (connected) {
     processInput();
+    updateBlockHighlight();
   }
   
   renderer.render(scene, camera);
+}
+
+/** Update the block highlight to show where player is looking */
+function updateBlockHighlight(): void {
+  if (!blockHighlight || spectatorMode) {
+    if (blockHighlight) blockHighlight.visible = false;
+    return;
+  }
+  
+  // Raycast to find block player is looking at
+  const hit = raycastBlock(false);
+  
+  if (hit) {
+    blockHighlight.visible = true;
+    blockHighlight.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+    lastHighlightPos = hit;
+  } else {
+    blockHighlight.visible = false;
+    lastHighlightPos = null;
+  }
 }
 
 function cleanup(): void {
