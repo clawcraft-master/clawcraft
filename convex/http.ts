@@ -660,8 +660,86 @@ http.route({
           return jsonResponse({ success: true, sent: message.trim().slice(0, 500) });
         }
 
+        case "batch_place": {
+          // Place multiple blocks at once (max 100 per request)
+          const { blocks: blockPlacements } = body;
+          if (!Array.isArray(blockPlacements)) {
+            return jsonResponse({ error: "batch_place requires blocks array" }, 400);
+          }
+          if (blockPlacements.length > 100) {
+            return jsonResponse({ error: "Maximum 100 blocks per batch" }, 400);
+          }
+
+          // Validate all blocks first
+          for (const b of blockPlacements) {
+            if (typeof b.x !== "number" || typeof b.y !== "number" || typeof b.z !== "number") {
+              return jsonResponse({ error: "Each block requires x, y, z coordinates" }, 400);
+            }
+            if (typeof b.blockType !== "number" || !BLOCK_INFO.find(bi => bi.id === b.blockType && bi.buildable)) {
+              return jsonResponse({ error: `Invalid block type: ${b.blockType}` }, 400);
+            }
+          }
+
+          // Group blocks by chunk
+          const chunkBlocks: Map<string, Array<{ x: number; y: number; z: number; blockType: number; localX: number; localY: number; localZ: number }>> = new Map();
+          
+          for (const b of blockPlacements) {
+            const cx = Math.floor(b.x / CHUNK_SIZE);
+            const cy = Math.floor(b.y / CHUNK_SIZE);
+            const cz = Math.floor(b.z / CHUNK_SIZE);
+            const key = `${cx},${cy},${cz}`;
+            
+            if (!chunkBlocks.has(key)) {
+              chunkBlocks.set(key, []);
+            }
+            chunkBlocks.get(key)!.push({
+              ...b,
+              localX: ((b.x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE,
+              localY: ((b.y % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE,
+              localZ: ((b.z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE,
+            });
+          }
+
+          // Load all needed chunks
+          const coords = Array.from(chunkBlocks.keys()).map(key => {
+            const [cx, cy, cz] = key.split(",").map(Number);
+            return { key, cx, cy, cz };
+          });
+
+          const chunks = await ctx.runMutation(api.chunks.getOrGenerateMany, { coords });
+
+          // Place blocks in each chunk
+          let placedCount = 0;
+          for (const [key, blocksInChunk] of chunkBlocks) {
+            const chunk = chunks[key];
+            if (!chunk) continue;
+
+            const blocks = decodeBlocks(chunk.blocksBase64);
+            
+            for (const b of blocksInChunk) {
+              setBlockAt(blocks, b.localX, b.localY, b.localZ, b.blockType);
+              placedCount++;
+            }
+
+            const [cx, cy, cz] = key.split(",").map(Number);
+            await ctx.runMutation(api.chunks.save, {
+              key,
+              cx,
+              cy,
+              cz,
+              blocksBase64: encodeBlocks(blocks),
+            });
+          }
+
+          return jsonResponse({
+            success: true,
+            placed: placedCount,
+            chunks: chunkBlocks.size,
+          });
+        }
+
         default:
-          return jsonResponse({ error: `Unknown action type: ${type}. Valid: move, place, break, chat` }, 400);
+          return jsonResponse({ error: `Unknown action type: ${type}. Valid: move, place, break, chat, batch_place` }, 400);
       }
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);
