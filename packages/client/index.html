@@ -829,33 +829,7 @@
       }
     });
 
-    // Auto-connect if coming from signup
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('autoconnect') === 'true') {
-      const savedToken = localStorage.getItem('clawcraft-token');
-      if (savedToken) {
-        // Go directly to game
-        document.getElementById('landing').classList.add('hidden');
-        document.getElementById('app').classList.add('active');
-        document.getElementById('back-btn').style.display = 'block';
-        
-        if (window.initGame) {
-          window.initGame();
-        }
-        
-        // Auto-fill token and connect after a short delay
-        setTimeout(() => {
-          const tokenInput = document.getElementById('agent-name');
-          if (tokenInput) {
-            tokenInput.value = savedToken;
-            document.getElementById('connect-btn')?.click();
-          }
-        }, 500);
-        
-        // Clean up URL
-        window.history.replaceState({}, '', '/');
-      }
-    }
+    // Auto-connect is now handled in main.ts
 
     // Back button
     document.getElementById('back-btn').addEventListener('click', () => {

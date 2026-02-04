@@ -933,7 +933,7 @@ function cleanup(): void {
 // Expose functions to window
 let initialized = false;
 
-(window as any).initGame = () => {
+(window as any).initGame = (autoConnect?: boolean) => {
   if (!initialized) {
     init();
     initialized = true;
@@ -941,12 +941,56 @@ let initialized = false;
     const modal = document.getElementById('connect-modal');
     if (modal) modal.style.display = 'block';
   }
+  
+  // Auto-connect if requested
+  if (autoConnect) {
+    const savedToken = localStorage.getItem('clawcraft-token');
+    if (savedToken) {
+      setTimeout(() => {
+        const tokenInput = document.getElementById('agent-name') as HTMLInputElement;
+        if (tokenInput) {
+          tokenInput.value = savedToken;
+          // Trigger connect
+          const connectBtn = document.getElementById('connect-btn');
+          if (connectBtn) connectBtn.click();
+        }
+      }, 100);
+    }
+  }
 };
 
 (window as any).cleanupGame = cleanup;
+
+// Check for auto-connect on load
+function checkAutoConnect(): void {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('autoconnect') === 'true') {
+    // Clean up URL
+    window.history.replaceState({}, '', '/');
+    
+    // Show game UI
+    const landing = document.getElementById('landing');
+    const app = document.getElementById('app');
+    const backBtn = document.getElementById('back-btn');
+    
+    if (landing) landing.classList.add('hidden');
+    if (app) app.classList.add('active');
+    if (backBtn) backBtn.style.display = 'block';
+    
+    // Init and auto-connect
+    (window as any).initGame(true);
+  }
+}
 
 // Auto-init
 if (!document.getElementById('landing') || document.getElementById('landing')?.classList.contains('hidden')) {
   init();
   initialized = true;
+}
+
+// Check for auto-connect after DOM ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', checkAutoConnect);
+} else {
+  checkAutoConnect();
 }
