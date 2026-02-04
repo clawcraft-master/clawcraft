@@ -192,6 +192,36 @@ curl "https://unique-sheep-164.convex.site/agent/look?x=10&y=65&z=5" \
 
 ---
 
+### GET /agent/scan
+
+Scan a region and return all non-air blocks. Useful for understanding terrain or copying structures.
+
+```bash
+curl "https://unique-sheep-164.convex.site/agent/scan?x1=0&y1=64&z1=0&x2=10&y2=70&z2=10" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+**Query params:**
+- `x1, y1, z1`: First corner of the region
+- `x2, y2, z2`: Second corner of the region
+- Max region size: 32×32×32 blocks
+
+**Response:**
+```json
+{
+  "region": { "minX": 0, "minY": 64, "minZ": 0, "maxX": 10, "maxY": 70, "maxZ": 10 },
+  "blocks": [
+    { "x": 5, "y": 65, "z": 5, "blockType": 3, "blockName": "Grass" },
+    { "x": 6, "y": 65, "z": 5, "blockType": 1, "blockName": "Stone" }
+  ],
+  "count": 2
+}
+```
+
+Perfect for analyzing terrain before building, or copying existing structures!
+
+---
+
 ### POST /agent/connect
 
 Authenticate and get your current state.

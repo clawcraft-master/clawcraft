@@ -94,7 +94,7 @@ function setBlockAt(blocks: number[], localX: number, localY: number, localZ: nu
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -350,6 +350,129 @@ http.route({
           buildable: blockInfo?.buildable || false,
         },
         chunk: { cx, cy, cz },
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /agent/scan - Scan a region and return all non-air blocks
+ * Header: Authorization: Bearer <token>
+ * Query: ?x1=0&y1=64&z1=0&x2=10&y2=70&z2=10 (max 32x32x32 region)
+ */
+http.route({
+  path: "/agent/scan",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const url = new URL(request.url);
+      const x1 = parseInt(url.searchParams.get("x1") || "");
+      const y1 = parseInt(url.searchParams.get("y1") || "");
+      const z1 = parseInt(url.searchParams.get("z1") || "");
+      const x2 = parseInt(url.searchParams.get("x2") || "");
+      const y2 = parseInt(url.searchParams.get("y2") || "");
+      const z2 = parseInt(url.searchParams.get("z2") || "");
+
+      if ([x1, y1, z1, x2, y2, z2].some(isNaN)) {
+        return jsonResponse({ error: "x1, y1, z1, x2, y2, z2 query parameters required" }, 400);
+      }
+
+      // Normalize bounds
+      const minX = Math.min(x1, x2);
+      const maxX = Math.max(x1, x2);
+      const minY = Math.min(y1, y2);
+      const maxY = Math.max(y1, y2);
+      const minZ = Math.min(z1, z2);
+      const maxZ = Math.max(z1, z2);
+
+      // Check region size (max 32x32x32)
+      if (maxX - minX > 32 || maxY - minY > 32 || maxZ - minZ > 32) {
+        return jsonResponse({ error: "Region too large. Max 32x32x32 blocks." }, 400);
+      }
+
+      // Find all chunks needed
+      const chunkKeys = new Set<string>();
+      for (let x = minX; x <= maxX; x += CHUNK_SIZE) {
+        for (let y = minY; y <= maxY; y += CHUNK_SIZE) {
+          for (let z = minZ; z <= maxZ; z += CHUNK_SIZE) {
+            const cx = Math.floor(x / CHUNK_SIZE);
+            const cy = Math.floor(y / CHUNK_SIZE);
+            const cz = Math.floor(z / CHUNK_SIZE);
+            chunkKeys.add(`${cx},${cy},${cz}`);
+          }
+        }
+      }
+
+      // Also add edge chunks
+      const cx2 = Math.floor(maxX / CHUNK_SIZE);
+      const cy2 = Math.floor(maxY / CHUNK_SIZE);
+      const cz2 = Math.floor(maxZ / CHUNK_SIZE);
+      chunkKeys.add(`${cx2},${cy2},${cz2}`);
+
+      // Load chunks
+      const coords = Array.from(chunkKeys).map(key => {
+        const [cx, cy, cz] = key.split(",").map(Number);
+        return { key, cx, cy, cz };
+      });
+
+      const chunks = await ctx.runMutation(api.chunks.getOrGenerateMany, { coords });
+
+      // Decode all chunks
+      const decodedChunks: Map<string, number[]> = new Map();
+      for (const [key, chunk] of Object.entries(chunks)) {
+        if (chunk) {
+          decodedChunks.set(key, decodeBlocks(chunk.blocksBase64));
+        }
+      }
+
+      // Scan region
+      const foundBlocks: Array<{ x: number; y: number; z: number; blockType: number; blockName: string }> = [];
+
+      for (let x = minX; x <= maxX; x++) {
+        for (let y = minY; y <= maxY; y++) {
+          for (let z = minZ; z <= maxZ; z++) {
+            const cx = Math.floor(x / CHUNK_SIZE);
+            const cy = Math.floor(y / CHUNK_SIZE);
+            const cz = Math.floor(z / CHUNK_SIZE);
+            const key = `${cx},${cy},${cz}`;
+
+            const chunkBlocks = decodedChunks.get(key);
+            if (!chunkBlocks) continue;
+
+            const localX = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+            const localY = ((y % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+            const localZ = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+
+            const blockId = getBlockAt(chunkBlocks, localX, localY, localZ);
+            if (blockId !== BLOCK_TYPES.AIR) {
+              foundBlocks.push({
+                x,
+                y,
+                z,
+                blockType: blockId,
+                blockName: BLOCK_INFO[blockId]?.name || "Unknown",
+              });
+            }
+          }
+        }
+      }
+
+      return jsonResponse({
+        region: { minX, minY, minZ, maxX, maxY, maxZ },
+        blocks: foundBlocks,
+        count: foundBlocks.length,
       });
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);
