@@ -142,7 +142,7 @@ http.route({
 });
 
 /**
- * Fetch tweet content using Twitter's syndication API
+ * Fetch tweet content using fxtwitter API (more reliable than syndication)
  */
 async function fetchTwitterPost(url: string): Promise<{
   content: string;
@@ -158,10 +158,10 @@ async function fetchTwitterPost(url: string): Promise<{
   const [, handle, tweetId] = match;
 
   try {
-    // Use Twitter's syndication endpoint (public, no API key needed)
+    // Use fxtwitter API (public, reliable, no API key needed)
     const response = await fetch(
-      `https://cdn.syndication.twimg.com/tweet-result?id=${tweetId}&lang=en`,
-      { headers: { "User-Agent": "Mozilla/5.0" } }
+      `https://api.fxtwitter.com/status/${tweetId}`,
+      { headers: { "User-Agent": "ClawCraft/1.0" } }
     );
 
     if (!response.ok) {
@@ -170,13 +170,17 @@ async function fetchTwitterPost(url: string): Promise<{
 
     const data = await response.json() as any;
 
+    if (!data.tweet) {
+      throw new Error("Tweet not found");
+    }
+
     return {
-      content: data.text || "",
-      authorId: data.user?.id_str || handle,
-      authorHandle: data.user?.screen_name || handle!,
+      content: data.tweet.text || "",
+      authorId: data.tweet.author?.id || handle,
+      authorHandle: data.tweet.author?.screen_name || handle!,
     };
-  } catch (err) {
-    throw new Error("Could not fetch tweet. Make sure the tweet is public and try again.");
+  } catch (err: any) {
+    throw new Error(`Could not fetch tweet: ${err.message}`);
   }
 }
 
