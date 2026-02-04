@@ -252,11 +252,21 @@ export async function breakBlock(
 }
 
 /**
- * Load chunks by keys
+ * Load chunks by keys (existing only)
  */
 export async function loadChunks(keys: string[]): Promise<Record<string, ConvexChunk>> {
   const c = getConvex();
   return await c.query(fnRef("chunks:getMany"), { keys }) as Record<string, ConvexChunk>;
+}
+
+/**
+ * Load or generate chunks (creates terrain if missing)
+ */
+export async function loadOrGenerateChunks(
+  coords: Array<{ key: string; cx: number; cy: number; cz: number }>
+): Promise<Record<string, ConvexChunk>> {
+  const c = getConvex();
+  return await c.mutation(fnRef("chunks:getOrGenerateMany"), { coords }) as Record<string, ConvexChunk>;
 }
 
 /**

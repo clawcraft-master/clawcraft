@@ -9,7 +9,7 @@ import {
   subscribeToChat,
   updatePosition,
   sendChat,
-  loadChunks,
+  loadOrGenerateChunks,
   disconnect,
   getMyAgentId,
   type ConvexAgent,
@@ -271,18 +271,26 @@ async function loadInitialChunks(): Promise<void> {
   const cz = Math.floor(playerPosition.z / CHUNK_SIZE);
   
   const radius = 3;
-  const keys: string[] = [];
+  const coords: Array<{ key: string; cx: number; cy: number; cz: number }> = [];
   
   for (let dx = -radius; dx <= radius; dx++) {
     for (let dy = -1; dy <= 2; dy++) {
       for (let dz = -radius; dz <= radius; dz++) {
-        keys.push(`${cx + dx},${cy + dy},${cz + dz}`);
+        const chunkCx = cx + dx;
+        const chunkCy = cy + dy;
+        const chunkCz = cz + dz;
+        coords.push({
+          key: `${chunkCx},${chunkCy},${chunkCz}`,
+          cx: chunkCx,
+          cy: chunkCy,
+          cz: chunkCz,
+        });
       }
     }
   }
   
-  // Load chunks and subscribe to updates
-  const loadedChunks = await loadChunks(keys);
+  // Load or generate chunks
+  const loadedChunks = await loadOrGenerateChunks(coords);
   
   for (const [key, chunk] of Object.entries(loadedChunks)) {
     if (chunk) {
