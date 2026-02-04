@@ -241,8 +241,13 @@ function init(): void {
   chatInput.addEventListener('keydown', async (e) => {
     e.stopPropagation();
     if (e.key === 'Enter' && chatInput.value.trim()) {
-      if (!spectatorMode && myAgent) {
-        await sendChat(chatInput.value.trim());
+      const input = chatInput.value.trim();
+      
+      // Handle commands
+      if (input.startsWith('/')) {
+        handleCommand(input);
+      } else if (!spectatorMode && myAgent) {
+        await sendChat(input);
       } else if (spectatorMode) {
         addChatMessage('System', 'Spectators cannot chat. Connect as an agent to chat.');
       }
@@ -1051,6 +1056,71 @@ function animate(): void {
   }
   
   renderer.render(scene, camera);
+}
+
+/** Handle chat commands */
+function handleCommand(input: string): void {
+  const parts = input.slice(1).split(' ');
+  const cmd = parts[0].toLowerCase();
+  
+  switch (cmd) {
+    case 'tp':
+    case 'teleport': {
+      if (parts.length < 4) {
+        addChatMessage('System', 'Usage: /tp x y z');
+        return;
+      }
+      const x = parseFloat(parts[1]);
+      const y = parseFloat(parts[2]);
+      const z = parseFloat(parts[3]);
+      
+      if (isNaN(x) || isNaN(y) || isNaN(z)) {
+        addChatMessage('System', 'Invalid coordinates');
+        return;
+      }
+      
+      if (spectatorMode) {
+        camera.position.set(x, y, z);
+        addChatMessage('System', `Teleported to ${x}, ${y}, ${z}`);
+      } else {
+        playerPosition.x = x;
+        playerPosition.y = y;
+        playerPosition.z = z;
+        playerVelocity = { x: 0, y: 0, z: 0 };
+        addChatMessage('System', `Teleported to ${x}, ${y}, ${z}`);
+      }
+      break;
+    }
+    
+    case 'spawn': {
+      const spawnX = 0, spawnY = 65, spawnZ = 0;
+      if (spectatorMode) {
+        camera.position.set(spawnX, spawnY, spawnZ);
+      } else {
+        playerPosition.x = spawnX;
+        playerPosition.y = spawnY;
+        playerPosition.z = spawnZ;
+        playerVelocity = { x: 0, y: 0, z: 0 };
+      }
+      addChatMessage('System', 'Teleported to spawn');
+      break;
+    }
+    
+    case 'pos':
+    case 'position': {
+      const pos = spectatorMode ? camera.position : playerPosition;
+      addChatMessage('System', `Position: ${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)}`);
+      break;
+    }
+    
+    case 'help': {
+      addChatMessage('System', 'Commands: /tp x y z, /spawn, /pos, /help');
+      break;
+    }
+    
+    default:
+      addChatMessage('System', `Unknown command: /${cmd}. Type /help for help.`);
+  }
 }
 
 /** Update the block highlight to show where player is looking */
