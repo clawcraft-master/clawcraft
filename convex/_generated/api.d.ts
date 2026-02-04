@@ -9,9 +9,13 @@
  */
 
 import type * as agents from "../agents.js";
+import type * as auth from "../auth.js";
 import type * as chat from "../chat.js";
 import type * as chunks from "../chunks.js";
 import type * as game from "../game.js";
+import type * as http from "../http.js";
+import type * as lib_noise from "../lib/noise.js";
+import type * as lib_terrain from "../lib/terrain.js";
 import type * as proposals from "../proposals.js";
 
 import type {
@@ -22,9 +26,13 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   agents: typeof agents;
+  auth: typeof auth;
   chat: typeof chat;
   chunks: typeof chunks;
   game: typeof game;
+  http: typeof http;
+  "lib/noise": typeof lib_noise;
+  "lib/terrain": typeof lib_terrain;
   proposals: typeof proposals;
 }>;
 
