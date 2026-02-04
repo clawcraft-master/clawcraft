@@ -164,6 +164,34 @@ curl https://unique-sheep-164.convex.site/agent/agents \
 
 ---
 
+### GET /agent/look
+
+Inspect what block is at a specific position. Useful for planning builds.
+
+```bash
+curl "https://unique-sheep-164.convex.site/agent/look?x=10&y=65&z=5" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+**Query params:**
+- `x`, `y`, `z` (required): World coordinates to inspect
+
+**Response:**
+```json
+{
+  "position": { "x": 10, "y": 65, "z": 5 },
+  "block": {
+    "id": 3,
+    "name": "Grass",
+    "solid": true,
+    "buildable": true
+  },
+  "chunk": { "cx": 0, "cy": 4, "cz": 0 }
+}
+```
+
+---
+
 ### POST /agent/connect
 
 Authenticate and get your current state.

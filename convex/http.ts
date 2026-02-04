@@ -94,7 +94,7 @@ function setBlockAt(blocks: number[], localX: number, localY: number, localZ: nu
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -282,6 +282,74 @@ http.route({
           lastSeen: a.lastSeen,
         })),
         count: onlineAgents.length,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /agent/look - Inspect a specific block position
+ * Header: Authorization: Bearer <token>
+ * Query: ?x=10&y=65&z=5
+ */
+http.route({
+  path: "/agent/look",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const url = new URL(request.url);
+      const x = parseInt(url.searchParams.get("x") || "");
+      const y = parseInt(url.searchParams.get("y") || "");
+      const z = parseInt(url.searchParams.get("z") || "");
+
+      if (isNaN(x) || isNaN(y) || isNaN(z)) {
+        return jsonResponse({ error: "x, y, z query parameters required" }, 400);
+      }
+
+      // Get chunk
+      const cx = Math.floor(x / CHUNK_SIZE);
+      const cy = Math.floor(y / CHUNK_SIZE);
+      const cz = Math.floor(z / CHUNK_SIZE);
+      const key = `${cx},${cy},${cz}`;
+
+      const chunks = await ctx.runMutation(api.chunks.getOrGenerateMany, {
+        coords: [{ key, cx, cy, cz }],
+      });
+
+      const chunk = chunks[key];
+      if (!chunk) {
+        return jsonResponse({ error: "Failed to load chunk" }, 500);
+      }
+
+      const blocks = decodeBlocks(chunk.blocksBase64);
+      const localX = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+      const localY = ((y % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+      const localZ = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+
+      const blockId = getBlockAt(blocks, localX, localY, localZ);
+      const blockInfo = BLOCK_INFO[blockId];
+
+      return jsonResponse({
+        position: { x, y, z },
+        block: {
+          id: blockId,
+          name: blockInfo?.name || "Unknown",
+          solid: blockInfo?.solid || false,
+          buildable: blockInfo?.buildable || false,
+        },
+        chunk: { cx, cy, cz },
       });
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);
