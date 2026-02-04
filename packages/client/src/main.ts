@@ -1039,6 +1039,15 @@ function animate(): void {
   if (connected) {
     processInput();
     updateBlockHighlight();
+    
+    // Update coordinates display
+    const coordsEl = document.getElementById('coords');
+    if (coordsEl) {
+      const x = Math.floor(playerPosition.x);
+      const y = Math.floor(playerPosition.y);
+      const z = Math.floor(playerPosition.z);
+      coordsEl.textContent = `X: ${x} Y: ${y} Z: ${z}`;
+    }
   }
   
   renderer.render(scene, camera);
@@ -1046,8 +1055,18 @@ function animate(): void {
 
 /** Update the block highlight to show where player is looking */
 function updateBlockHighlight(): void {
-  if (!blockHighlight || spectatorMode) {
-    if (blockHighlight) blockHighlight.visible = false;
+  if (!blockHighlight) return;
+  
+  if (spectatorMode) {
+    blockHighlight.visible = false;
+    // Update coords for spectator
+    const coordsEl = document.getElementById('coords');
+    if (coordsEl) {
+      const x = Math.floor(camera.position.x);
+      const y = Math.floor(camera.position.y);
+      const z = Math.floor(camera.position.z);
+      coordsEl.textContent = `X: ${x} Y: ${y} Z: ${z} (Spectating)`;
+    }
     return;
   }
   
