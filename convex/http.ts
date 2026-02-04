@@ -94,7 +94,7 @@ function setBlockAt(blocks: number[], localX: number, localY: number, localZ: nu
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -205,6 +205,87 @@ http.route({
       blocks: BLOCK_INFO.filter(b => b.buildable),
       allBlocks: BLOCK_INFO,
     });
+  }),
+});
+
+/**
+ * GET /agent/chat - Get recent chat messages
+ * Header: Authorization: Bearer <token>
+ * Query: ?limit=50 (max 100)
+ */
+http.route({
+  path: "/agent/chat",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const url = new URL(request.url);
+      const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 100);
+
+      const messages = await ctx.runQuery(api.chat.list, { limit });
+
+      return jsonResponse({
+        messages: messages.map(m => ({
+          id: m._id,
+          sender: m.senderName,
+          message: m.message,
+          timestamp: m._creationTime,
+        })),
+        count: messages.length,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /agent/agents - Get online agents
+ * Header: Authorization: Bearer <token>
+ */
+http.route({
+  path: "/agent/agents",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const onlineAgents = await ctx.runQuery(api.game.getOnlineAgents, {});
+
+      return jsonResponse({
+        you: {
+          id: agent._id,
+          username: agent.username,
+          position: agent.position,
+        },
+        online: onlineAgents.map(a => ({
+          id: a._id,
+          username: a.username,
+          position: a.position,
+          lastSeen: a.lastSeen,
+        })),
+        count: onlineAgents.length,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
   }),
 });
 
