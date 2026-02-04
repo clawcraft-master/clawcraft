@@ -76,6 +76,91 @@ const POSITION_SYNC_INTERVAL = 50; // ms
 // Chunk subscriptions
 let chunkUnsubscribes: Map<string, () => void> = new Map();
 
+// Player dimensions (bounding box)
+const PLAYER_WIDTH = 0.6;
+const PLAYER_HEIGHT = 1.8;
+
+// ============================================================================
+// COLLISION DETECTION
+// ============================================================================
+
+/** Get block ID at world coordinates */
+function getBlockAtWorld(worldX: number, worldY: number, worldZ: number): number {
+  const cx = Math.floor(worldX / CHUNK_SIZE);
+  const cy = Math.floor(worldY / CHUNK_SIZE);
+  const cz = Math.floor(worldZ / CHUNK_SIZE);
+  const key = `${cx},${cy},${cz}`;
+  
+  const chunk = chunks.get(key);
+  if (!chunk) return BlockTypes.AIR; // Unloaded = air (passable)
+  
+  const localX = ((Math.floor(worldX) % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+  const localY = ((Math.floor(worldY) % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+  const localZ = ((Math.floor(worldZ) % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+  
+  const index = localX + localY * CHUNK_SIZE + localZ * CHUNK_SIZE * CHUNK_SIZE;
+  return chunk.blocks[index] ?? BlockTypes.AIR;
+}
+
+/** Check if a block is solid (collidable) */
+function isBlockSolid(blockId: number): boolean {
+  const def = BlockDefinitions[blockId as keyof typeof BlockDefinitions];
+  return def?.solid ?? false;
+}
+
+/** Check if a position collides with solid blocks (AABB collision) */
+function checkCollision(x: number, y: number, z: number): boolean {
+  const halfWidth = PLAYER_WIDTH / 2;
+  
+  // Check all 8 corners of the player's bounding box
+  const minX = x - halfWidth;
+  const maxX = x + halfWidth;
+  const minY = y;
+  const maxY = y + PLAYER_HEIGHT;
+  const minZ = z - halfWidth;
+  const maxZ = z + halfWidth;
+  
+  // Check corners and edges
+  const checkPoints = [
+    [minX, minY, minZ], [maxX, minY, minZ], [minX, minY, maxZ], [maxX, minY, maxZ],
+    [minX, maxY, minZ], [maxX, maxY, minZ], [minX, maxY, maxZ], [maxX, maxY, maxZ],
+    // Mid points for better collision on thin walls
+    [x, minY, minZ], [x, minY, maxZ], [minX, minY, z], [maxX, minY, z],
+    [x, maxY, minZ], [x, maxY, maxZ], [minX, maxY, z], [maxX, maxY, z],
+  ];
+  
+  for (const [px, py, pz] of checkPoints) {
+    if (isBlockSolid(getBlockAtWorld(px, py, pz))) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/** Check if standing on solid ground */
+function checkGrounded(x: number, y: number, z: number): boolean {
+  const halfWidth = PLAYER_WIDTH / 2;
+  const groundY = y - 0.01; // Slightly below feet
+  
+  // Check under feet
+  const checkPoints = [
+    [x, groundY, z],
+    [x - halfWidth, groundY, z - halfWidth],
+    [x + halfWidth, groundY, z - halfWidth],
+    [x - halfWidth, groundY, z + halfWidth],
+    [x + halfWidth, groundY, z + halfWidth],
+  ];
+  
+  for (const [px, py, pz] of checkPoints) {
+    if (isBlockSolid(getBlockAtWorld(px, py, pz))) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
@@ -488,17 +573,44 @@ function processInput(): void {
   playerVelocity.x *= FRICTION;
   playerVelocity.z *= FRICTION;
 
-  // Update position
-  playerPosition.x += playerVelocity.x;
-  playerPosition.y += playerVelocity.y;
-  playerPosition.z += playerVelocity.z;
+  // Collision detection - check each axis separately for sliding
+  const newX = playerPosition.x + playerVelocity.x;
+  const newY = playerPosition.y + playerVelocity.y;
+  const newZ = playerPosition.z + playerVelocity.z;
 
-  // Simple ground collision (y = 64 is ground level for now)
-  // TODO: Proper collision detection with blocks
-  if (playerPosition.y < 64) {
-    playerPosition.y = 64;
+  // X-axis collision
+  if (!checkCollision(newX, playerPosition.y, playerPosition.z)) {
+    playerPosition.x = newX;
+  } else {
+    playerVelocity.x = 0;
+  }
+
+  // Z-axis collision
+  if (!checkCollision(playerPosition.x, playerPosition.y, newZ)) {
+    playerPosition.z = newZ;
+  } else {
+    playerVelocity.z = 0;
+  }
+
+  // Y-axis collision
+  if (!checkCollision(playerPosition.x, newY, playerPosition.z)) {
+    playerPosition.y = newY;
+  } else {
+    // Hit ceiling or floor
+    if (playerVelocity.y < 0) {
+      // Falling - snap to ground
+      playerPosition.y = Math.floor(playerPosition.y) + 0.001;
+    }
     playerVelocity.y = 0;
-    onGround = true;
+  }
+
+  // Ground check
+  onGround = checkGrounded(playerPosition.x, playerPosition.y, playerPosition.z);
+
+  // Prevent falling through world (safety net)
+  if (playerPosition.y < -64) {
+    playerPosition.y = 65;
+    playerVelocity.y = 0;
   }
 
   // Update camera
