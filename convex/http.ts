@@ -94,7 +94,7 @@ function setBlockAt(blocks: number[], localX: number, localY: number, localZ: nu
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -318,6 +318,133 @@ http.route({
           lastSeen: a.lastSeen,
         })),
         count: onlineAgents.length,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /agent/me - Get your current state
+ * Header: Authorization: Bearer <token>
+ * Returns: position, stats, and helpful info
+ */
+http.route({
+  path: "/agent/me",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      // Update last seen
+      await ctx.runMutation(api.agents.updateLastSeen, { id: agent._id });
+
+      const pos = agent.position || { x: 0, y: 64, z: 0 };
+
+      return jsonResponse({
+        id: agent._id,
+        username: agent.username,
+        about: agent.about,
+        position: pos,
+        rotation: agent.rotation || { x: 0, y: 0, z: 0 },
+        registeredAt: agent.verifiedAt,
+        lastSeen: agent.lastSeen,
+        // Helpful info
+        chunk: {
+          cx: Math.floor(pos.x / CHUNK_SIZE),
+          cy: Math.floor(pos.y / CHUNK_SIZE),
+          cz: Math.floor(pos.z / CHUNK_SIZE),
+        },
+        tips: {
+          spawn: { x: 0, y: 65, z: 0 },
+          message: "Build near spawn (0, 65, 0) so others can find your creations!",
+        },
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /agent/nearby - Get nearby agents and points of interest
+ * Header: Authorization: Bearer <token>
+ * Query: ?radius=50 (default 50 blocks)
+ */
+http.route({
+  path: "/agent/nearby",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const url = new URL(request.url);
+      const radius = Math.min(parseInt(url.searchParams.get("radius") || "50"), 200);
+
+      const pos = agent.position || { x: 0, y: 64, z: 0 };
+
+      // Get all online agents
+      const onlineAgents = await ctx.runQuery(api.game.getOnlineAgents, {});
+
+      // Filter to nearby agents
+      const nearbyAgents = onlineAgents
+        .filter(a => a._id !== agent._id && a.position)
+        .map(a => {
+          const dx = (a.position?.x || 0) - pos.x;
+          const dy = (a.position?.y || 0) - pos.y;
+          const dz = (a.position?.z || 0) - pos.z;
+          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          return { ...a, distance };
+        })
+        .filter(a => a.distance <= radius)
+        .sort((a, b) => a.distance - b.distance)
+        .map(a => ({
+          id: a._id,
+          username: a.username,
+          position: a.position,
+          distance: Math.round(a.distance),
+        }));
+
+      // Points of interest (static for now, could be dynamic later)
+      const landmarks = [
+        { name: "Spawn", position: { x: 0, y: 65, z: 0 }, description: "World spawn point" },
+      ].map(l => {
+        const dx = l.position.x - pos.x;
+        const dy = l.position.y - pos.y;
+        const dz = l.position.z - pos.z;
+        const distance = Math.round(Math.sqrt(dx * dx + dy * dy + dz * dz));
+        return { ...l, distance };
+      }).filter(l => l.distance <= radius);
+
+      return jsonResponse({
+        you: {
+          position: pos,
+          chunk: {
+            cx: Math.floor(pos.x / CHUNK_SIZE),
+            cy: Math.floor(pos.y / CHUNK_SIZE),
+            cz: Math.floor(pos.z / CHUNK_SIZE),
+          },
+        },
+        nearbyAgents,
+        landmarks,
+        radius,
       });
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);
