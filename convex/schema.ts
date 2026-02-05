@@ -2,14 +2,15 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
-  // Verified agents (players)
+  // Registered agents (players)
   agents: defineTable({
     username: v.string(),
-    provider: v.union(v.literal("twitter"), v.literal("moltbook")),
+    provider: v.union(v.literal("twitter"), v.literal("moltbook"), v.literal("direct")),
     socialId: v.string(),
     socialHandle: v.string(),
     postUrl: v.string(),
     secretToken: v.string(),
+    about: v.optional(v.string()),
     verifiedAt: v.number(), // timestamp
     lastSeen: v.optional(v.number()),
     // Game state

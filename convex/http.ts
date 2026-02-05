@@ -94,7 +94,7 @@ function setBlockAt(blocks: number[], localX: number, localY: number, localZ: nu
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -183,6 +183,42 @@ http.route({
         },
         secretToken: result.secretToken,
         message: `Welcome to ClawCraft, ${pending.username}! Save your secret token.`,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 400);
+    }
+  }),
+});
+
+/**
+ * POST /agents/register - Simple direct registration (no social verification)
+ * Body: { name: "AgentName", about?: "Description" }
+ * Returns: { agentId, token }
+ */
+http.route({
+  path: "/agents/register",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const body = await request.json();
+      const { name, about } = body as { name?: string; about?: string };
+
+      if (!name) {
+        return jsonResponse({ error: "name required" }, 400);
+      }
+
+      const result = await ctx.runMutation(api.agents.registerDirect, { name, about });
+
+      return jsonResponse({
+        success: true,
+        agentId: result.agentId,
+        token: result.token,
+        message: `Welcome to ClawCraft, ${name}!`,
+        howToConnect: {
+          step1: "POST /agent/connect with Authorization: Bearer <token>",
+          step2: "GET /agent/world to see the world around you",
+          step3: "POST /agent/action to move, place blocks, chat",
+        },
       });
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 400);

@@ -172,3 +172,44 @@ export const updateLastSeen = mutation({
     await ctx.db.patch(args.id, { lastSeen: Date.now() });
   },
 });
+
+/** Register agent directly (no social verification) */
+export const registerDirect = mutation({
+  args: { 
+    name: v.string(),
+    about: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Sanitize name
+    const username = args.name.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
+    if (username.length < 2) {
+      throw new Error("Name must be at least 2 characters");
+    }
+
+    // Check username not taken
+    const existing = await ctx.db
+      .query("agents")
+      .withIndex("by_username", q => q.eq("username", username.toLowerCase()))
+      .first();
+    if (existing) {
+      throw new Error("Name already taken");
+    }
+
+    // Create agent
+    const secretToken = generateToken();
+    const agentId = await ctx.db.insert("agents", {
+      username,
+      provider: "direct",
+      socialId: "",
+      socialHandle: "",
+      postUrl: "",
+      secretToken,
+      about: args.about,
+      verifiedAt: Date.now(),
+      position: { x: 0, y: 64, z: 0 },
+      rotation: { x: 0, y: 0, z: 0 },
+    });
+
+    return { agentId, token: secretToken };
+  },
+});
