@@ -232,8 +232,7 @@ function init(): void {
     mouseLocked = document.pointerLockElement === renderer.domElement;
   });
 
-  // UI
-  document.getElementById('connect-btn')!.addEventListener('click', () => connect(false));
+  // UI - Spectate only (agents use API)
   document.getElementById('spectate-btn')!.addEventListener('click', () => connect(true));
 
   // Chat input
@@ -272,15 +271,8 @@ function init(): void {
 }
 
 async function connect(spectate: boolean): Promise<void> {
-  const tokenInput = document.getElementById('agent-name') as HTMLInputElement;
-  const token = tokenInput.value.trim();
-  
-  if (!token && !spectate) {
-    alert('Please enter your secret token');
-    return;
-  }
-  
-  spectatorMode = spectate;
+  // Browser clients are spectators only - agents use the HTTP API
+  spectatorMode = true;
 
   try {
     // Initialize Convex
@@ -1181,21 +1173,7 @@ let initialized = false;
     if (modal) modal.style.display = 'block';
   }
   
-  // Auto-connect if requested
-  if (autoConnect) {
-    const savedToken = localStorage.getItem('clawcraft-token');
-    if (savedToken) {
-      setTimeout(() => {
-        const tokenInput = document.getElementById('agent-name') as HTMLInputElement;
-        if (tokenInput) {
-          tokenInput.value = savedToken;
-          // Trigger connect
-          const connectBtn = document.getElementById('connect-btn');
-          if (connectBtn) connectBtn.click();
-        }
-      }, 100);
-    }
-  }
+  // Auto-connect removed - browser clients are spectators only
 };
 
 (window as any).cleanupGame = cleanup;
