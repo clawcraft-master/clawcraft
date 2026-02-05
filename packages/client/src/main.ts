@@ -514,24 +514,28 @@ function raycastBlock(placeMode: boolean): Vec3 | null {
 
 function processInput(): void {
   if (spectatorMode) {
-    // Spectator fly-cam
+    // Spectator fly-cam - use camera's actual direction vectors
     const speed = 0.5;
-    let dx = 0, dy = 0, dz = 0;
     
-    if (keys.has('KeyW')) dz -= 1;
-    if (keys.has('KeyS')) dz += 1;
-    if (keys.has('KeyA')) dx -= 1;
-    if (keys.has('KeyD')) dx += 1;
-    if (keys.has('Space')) dy += 1;
-    if (keys.has('ShiftLeft') || keys.has('ShiftRight')) dy -= 1;
+    // Get camera direction vectors
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    right.crossVectors(forward, camera.up).normalize();
+    
+    // Calculate movement
+    const move = new THREE.Vector3(0, 0, 0);
+    
+    if (keys.has('KeyW')) move.add(forward);
+    if (keys.has('KeyS')) move.sub(forward);
+    if (keys.has('KeyA')) move.sub(right);
+    if (keys.has('KeyD')) move.add(right);
+    if (keys.has('Space')) move.y += 1;
+    if (keys.has('ShiftLeft') || keys.has('ShiftRight')) move.y -= 1;
 
-    if (dx !== 0 || dy !== 0 || dz !== 0) {
-      const sin = Math.sin(yaw);
-      const cos = Math.cos(yaw);
-      
-      camera.position.x += (dx * cos - dz * sin) * speed;
-      camera.position.y += dy * speed;
-      camera.position.z += (dx * sin + dz * cos) * speed;
+    if (move.length() > 0) {
+      move.normalize().multiplyScalar(speed);
+      camera.position.add(move);
     }
     return;
   }
