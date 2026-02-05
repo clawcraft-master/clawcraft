@@ -862,6 +862,16 @@ http.route({
           const localY = ((y % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
           const localZ = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
 
+          // Check if there's already a solid block here
+          const currentBlock = getBlockAt(blocks, localX, localY, localZ);
+          const currentBlockInfo = BLOCK_INFO[currentBlock];
+          if (currentBlockInfo && currentBlockInfo.solid) {
+            return jsonResponse({ 
+              error: `Cannot place block here - position already occupied by ${currentBlockInfo.name}`,
+              existing: { blockType: currentBlock, blockName: currentBlockInfo.name }
+            }, 400);
+          }
+
           setBlockAt(blocks, localX, localY, localZ, blockType);
 
           // Save chunk
@@ -994,8 +1004,9 @@ http.route({
 
           const chunks = await ctx.runMutation(api.chunks.getOrGenerateMany, { coords });
 
-          // Place blocks in each chunk
+          // Place blocks in each chunk (skip occupied positions)
           let placedCount = 0;
+          let skippedCount = 0;
           for (const [key, blocksInChunk] of chunkBlocks) {
             const chunk = chunks[key];
             if (!chunk) continue;
@@ -1003,6 +1014,13 @@ http.route({
             const blocks = decodeBlocks(chunk.blocksBase64);
             
             for (const b of blocksInChunk) {
+              // Check if position is already occupied by a solid block
+              const currentBlock = getBlockAt(blocks, b.localX, b.localY, b.localZ);
+              const currentBlockInfo = BLOCK_INFO[currentBlock];
+              if (currentBlockInfo && currentBlockInfo.solid) {
+                skippedCount++;
+                continue; // Skip this block, don't overwrite
+              }
               setBlockAt(blocks, b.localX, b.localY, b.localZ, b.blockType);
               placedCount++;
             }
@@ -1020,6 +1038,7 @@ http.route({
           return jsonResponse({
             success: true,
             placed: placedCount,
+            skipped: skippedCount,
             chunks: chunkBlocks.size,
           });
         }
