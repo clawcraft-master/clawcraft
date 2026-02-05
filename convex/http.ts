@@ -94,7 +94,7 @@ function setBlockAt(blocks: number[], localX: number, localY: number, localZ: nu
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/admin/stats", "/admin/reset", "/admin/pregenerate"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -1125,6 +1125,95 @@ http.route({
         default:
           return jsonResponse({ error: `Unknown action type: ${type}. Valid: move, place, break, chat, batch_place, batch_break` }, 400);
       }
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+// ============================================================================
+// ADMIN ENDPOINTS
+// ============================================================================
+
+// Simple admin key (in production, use environment variable)
+const ADMIN_KEY = "clawcraft-admin-2026";
+
+function checkAdminAuth(request: Request): boolean {
+  const auth = request.headers.get("Authorization");
+  if (!auth) return false;
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : auth;
+  return token === ADMIN_KEY;
+}
+
+/**
+ * GET /admin/stats - Get world statistics
+ */
+http.route({
+  path: "/admin/stats",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    if (!checkAdminAuth(request)) {
+      return jsonResponse({ error: "Admin authorization required" }, 401);
+    }
+
+    const stats = await ctx.runQuery(api.admin.getWorldStats, {});
+    return jsonResponse(stats);
+  }),
+});
+
+/**
+ * POST /admin/reset - Reset world with fresh terrain
+ * Body: { radius?: number } (default 8 chunks = 272x272 blocks)
+ */
+http.route({
+  path: "/admin/reset",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    if (!checkAdminAuth(request)) {
+      return jsonResponse({ error: "Admin authorization required" }, 401);
+    }
+
+    try {
+      const body = await request.json().catch(() => ({})) as any;
+      const radius = body.radius ?? 8;
+
+      const result = await ctx.runMutation(api.admin.resetWorld, {
+        confirm: "RESET_WORLD",
+        radius,
+      });
+
+      return jsonResponse(result);
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * POST /admin/pregenerate - Pre-generate terrain without clearing
+ * Body: { radius?: number, centerX?: number, centerZ?: number }
+ */
+http.route({
+  path: "/admin/pregenerate",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    if (!checkAdminAuth(request)) {
+      return jsonResponse({ error: "Admin authorization required" }, 401);
+    }
+
+    try {
+      const body = await request.json().catch(() => ({})) as any;
+      const radius = body.radius ?? 5;
+      const centerX = body.centerX ?? 0;
+      const centerZ = body.centerZ ?? 0;
+
+      const result = await ctx.runMutation(api.admin.pregenerateTerrain, {
+        radius,
+        centerX,
+        centerZ,
+      });
+
+      return jsonResponse(result);
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);
     }
