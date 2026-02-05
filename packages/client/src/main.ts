@@ -282,20 +282,8 @@ async function connect(spectate: boolean): Promise<void> {
     }
     initConvex(convexUrl);
 
-    if (!spectate) {
-      // Authenticate
-      const agent = await authenticate(token);
-      if (!agent) {
-        alert('Invalid token. Please check your secret token.');
-        return;
-      }
-      myAgent = agent;
-      playerPosition = agent.position || { x: 0, y: 64, z: 0 };
-      camera.position.set(playerPosition.x, playerPosition.y + 1.6, playerPosition.z);
-      addChatMessage('System', `Welcome back, ${agent.username}!`);
-    } else {
-      addChatMessage('System', 'Spectating... Use WASD + Space/Shift to fly');
-    }
+    // Spectator mode - no authentication needed
+    addChatMessage('System', 'Spectating... Use WASD + Space/Shift to fly');
 
     // Subscribe to real-time updates
     setupSubscriptions();
@@ -305,10 +293,6 @@ async function connect(spectate: boolean): Promise<void> {
 
     connected = true;
     document.getElementById('connect-modal')!.style.display = 'none';
-    
-    if (!spectate) {
-      updateHotbar();
-    }
   } catch (err: any) {
     console.error('Connection failed:', err);
     alert('Connection failed: ' + err.message);
