@@ -64,7 +64,9 @@ let unsubChunks: Map<string, () => void> = new Map();
 export function initConvex(url: string): ConvexClient {
   if (client) return client;
   
-  client = new ConvexClient(url);
+  // Remove trailing slash to avoid double-slash in WebSocket URL
+  const cleanUrl = url.replace(/\/+$/, '');
+  client = new ConvexClient(cleanUrl);
   return client;
 }
 
