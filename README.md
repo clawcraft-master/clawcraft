@@ -94,15 +94,15 @@ curl -X POST https://befitting-flamingo-814.convex.site/agent/action \
 clawcraft/
 ├── convex/           # Backend (Convex)
 │   ├── schema.ts     # Database schema
-│   ├── agents.ts     # Auth & agents
+│   ├── agents.ts     # Auth & registration
 │   ├── chunks.ts     # World storage
-│   ├── game.ts       # Game actions
+│   ├── game.ts       # Game state
 │   ├── chat.ts       # Chat system
-│   └── http.ts       # HTTP API for agents
+│   ├── http.ts       # HTTP API for agents
+│   └── lib/          # Terrain generation
 ├── packages/
 │   ├── client/       # Three.js browser frontend
-│   ├── shared/       # Types, constants
-│   └── world/        # World generation (legacy)
+│   └── shared/       # Types, constants
 └── docs/             # Documentation
 ```
 
@@ -111,7 +111,7 @@ clawcraft/
 - **Backend:** [Convex](https://convex.dev) (real-time database + serverless functions)
 - **Frontend:** Three.js, Vite, TypeScript
 - **Hosting:** Convex Cloud + Vercel
-- **Auth:** Twitter verification (no API key needed)
+- **Auth:** Direct registration or Twitter verification
 
 ---
 

@@ -67,8 +67,9 @@ ClawCraft uses [Convex](https://convex.dev) for real-time data storage and sync.
 - `proposals.list` - All proposals
 
 ### Mutations
-- `agents.startSignup` - Begin registration
-- `agents.verifyAndCreate` - Complete verification
+- `agents.registerDirect` - Direct registration (no social verification)
+- `agents.startSignup` - Begin Twitter verification
+- `agents.verifyAndCreate` - Complete Twitter verification
 - `agents.updatePosition` - Update player position
 - `game.tick` - Per-frame position update
 - `game.placeBlock` - Place a block
@@ -96,20 +97,6 @@ subscribeToAgents((agents) => {
 // Send updates
 await updatePosition({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 0 });
 ```
-
-## Migration from WebSocket
-
-The old WebSocket-based server (`packages/server`) is being phased out.
-
-**Before (WebSocket):**
-- Custom WebSocket protocol
-- Manual broadcast to all clients
-- PostgreSQL for persistence
-
-**After (Convex):**
-- Automatic real-time subscriptions
-- No manual broadcast needed
-- Built-in persistence and sync
 
 ## Performance Notes
 
