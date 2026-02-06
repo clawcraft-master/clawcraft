@@ -479,6 +479,147 @@
       color: #666;
     }
 
+    /* ========== MOBILE CONTROLS ========== */
+    #mobile-controls {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      top: 0;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    @media (max-width: 768px), (pointer: coarse) {
+      #mobile-controls {
+        display: block;
+      }
+      
+      #chat-box {
+        width: calc(100% - 40px);
+        bottom: 120px;
+      }
+      
+      #agent-list {
+        display: none;
+      }
+      
+      #stats-display {
+        font-size: 11px;
+        padding: 8px 12px;
+      }
+      
+      #crosshair {
+        display: none;
+      }
+    }
+
+    #joystick-zone {
+      position: absolute;
+      left: 20px;
+      bottom: 30px;
+      width: 120px;
+      height: 120px;
+      pointer-events: auto;
+    }
+
+    #joystick-base {
+      width: 120px;
+      height: 120px;
+      background: rgba(255, 255, 255, 0.15);
+      border: 2px solid rgba(78, 205, 196, 0.4);
+      border-radius: 50%;
+      position: relative;
+    }
+
+    #joystick-stick {
+      width: 50px;
+      height: 50px;
+      background: rgba(78, 205, 196, 0.6);
+      border-radius: 50%;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      transition: none;
+    }
+
+    #look-zone {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      width: 50%;
+      height: 60%;
+      pointer-events: auto;
+    }
+
+    #vertical-buttons {
+      position: absolute;
+      right: 20px;
+      bottom: 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: auto;
+    }
+
+    .vertical-btn {
+      width: 60px;
+      height: 60px;
+      background: rgba(255, 255, 255, 0.15);
+      border: 2px solid rgba(78, 205, 196, 0.4);
+      border-radius: 12px;
+      color: white;
+      font-size: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+
+    .vertical-btn:active, .vertical-btn.active {
+      background: rgba(78, 205, 196, 0.5);
+      border-color: var(--primary);
+    }
+
+    #mobile-hint {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.8);
+      padding: 20px 30px;
+      border-radius: 12px;
+      text-align: center;
+      pointer-events: auto;
+      max-width: 300px;
+    }
+
+    #mobile-hint h3 {
+      color: var(--primary);
+      margin-bottom: 10px;
+    }
+
+    #mobile-hint p {
+      font-size: 14px;
+      color: #aaa;
+      margin-bottom: 15px;
+      line-height: 1.4;
+    }
+
+    #mobile-hint button {
+      background: var(--primary);
+      color: var(--bg-dark);
+      border: none;
+      padding: 10px 25px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
     #hotbar {
       position: absolute;
       bottom: 20px;
@@ -798,6 +939,28 @@
     <div id="crosshair"></div>
 
     <div id="hotbar"></div>
+
+    <!-- Mobile Controls -->
+    <div id="mobile-controls">
+      <div id="joystick-zone">
+        <div id="joystick-base">
+          <div id="joystick-stick"></div>
+        </div>
+      </div>
+      
+      <div id="look-zone"></div>
+      
+      <div id="vertical-buttons">
+        <button class="vertical-btn" id="btn-up">↑</button>
+        <button class="vertical-btn" id="btn-down">↓</button>
+      </div>
+
+      <div id="mobile-hint">
+        <h3>📱 Mobile Controls</h3>
+        <p>Left: Move joystick<br>Right: Swipe to look<br>Arrows: Up/Down</p>
+        <button id="mobile-hint-close">Got it!</button>
+      </div>
+    </div>
 
     <div id="connect-modal">
       <h2>👀 Spectate World</h2>

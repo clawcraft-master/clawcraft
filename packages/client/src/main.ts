@@ -42,6 +42,19 @@ let mouseLocked = false;
 let yaw = 0;
 let pitch = 0;
 
+// Mobile controls
+let isMobile = false;
+let joystickActive = false;
+let joystickStartX = 0;
+let joystickStartY = 0;
+let joystickDeltaX = 0;
+let joystickDeltaY = 0;
+let lookTouchId: number | null = null;
+let lookLastX = 0;
+let lookLastY = 0;
+let mobileUp = false;
+let mobileDown = false;
+
 // Player physics (client-side prediction)
 let playerPosition = { x: 0, y: 64, z: 0 };
 let playerVelocity = { x: 0, y: 0, z: 0 };
@@ -234,6 +247,9 @@ function init(): void {
 
   // UI - Spectate only (agents use API)
   document.getElementById('spectate-btn')!.addEventListener('click', () => connect(true));
+
+  // Mobile controls setup
+  setupMobileControls();
 
   // Chat input
   const chatInput = document.getElementById('chat-input') as HTMLInputElement;
@@ -526,12 +542,28 @@ function processInput(): void {
     // Calculate movement
     const move = new THREE.Vector3(0, 0, 0);
     
+    // Keyboard input
     if (keys.has('KeyW')) move.add(forward);
     if (keys.has('KeyS')) move.sub(forward);
     if (keys.has('KeyA')) move.sub(right);
     if (keys.has('KeyD')) move.add(right);
     if (keys.has('Space')) move.y += 1;
     if (keys.has('ShiftLeft') || keys.has('ShiftRight')) move.y -= 1;
+
+    // Mobile joystick input
+    if (joystickActive) {
+      // joystickDeltaY: negative = forward, positive = backward
+      // joystickDeltaX: negative = left, positive = right
+      const forwardAmount = -joystickDeltaY;
+      const rightAmount = joystickDeltaX;
+      
+      move.add(forward.clone().multiplyScalar(forwardAmount));
+      move.add(right.clone().multiplyScalar(rightAmount));
+    }
+
+    // Mobile up/down buttons
+    if (mobileUp) move.y += 1;
+    if (mobileDown) move.y -= 1;
 
     if (move.length() > 0) {
       move.normalize().multiplyScalar(speed);
@@ -646,6 +678,151 @@ function onMouseMove(event: MouseEvent): void {
   camera.rotation.order = 'YXZ';
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
+}
+
+// ============================================================================
+// MOBILE CONTROLS
+// ============================================================================
+
+function setupMobileControls(): void {
+  // Detect mobile
+  isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  
+  const joystickZone = document.getElementById('joystick-zone');
+  const joystickStick = document.getElementById('joystick-stick');
+  const lookZone = document.getElementById('look-zone');
+  const btnUp = document.getElementById('btn-up');
+  const btnDown = document.getElementById('btn-down');
+  const mobileHint = document.getElementById('mobile-hint');
+  const mobileHintClose = document.getElementById('mobile-hint-close');
+  
+  if (!joystickZone || !joystickStick || !lookZone || !btnUp || !btnDown) return;
+
+  // Hide mobile hint if already seen
+  const hintSeen = localStorage.getItem('clawcraft-mobile-hint-seen');
+  if (hintSeen && mobileHint) {
+    mobileHint.style.display = 'none';
+  }
+
+  // Close mobile hint
+  if (mobileHintClose && mobileHint) {
+    mobileHintClose.addEventListener('click', () => {
+      mobileHint.style.display = 'none';
+      localStorage.setItem('clawcraft-mobile-hint-seen', 'true');
+    });
+  }
+
+  // Joystick touch handlers
+  joystickZone.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = joystickZone.getBoundingClientRect();
+    joystickStartX = rect.left + rect.width / 2;
+    joystickStartY = rect.top + rect.height / 2;
+    joystickActive = true;
+    updateJoystick(touch.clientX, touch.clientY, joystickStick);
+  }, { passive: false });
+
+  joystickZone.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (!joystickActive) return;
+    const touch = e.touches[0];
+    updateJoystick(touch.clientX, touch.clientY, joystickStick);
+  }, { passive: false });
+
+  joystickZone.addEventListener('touchend', () => {
+    joystickActive = false;
+    joystickDeltaX = 0;
+    joystickDeltaY = 0;
+    if (joystickStick) {
+      joystickStick.style.transform = 'translate(-50%, -50%)';
+    }
+  });
+
+  // Look zone touch handlers
+  lookZone.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    lookTouchId = touch.identifier;
+    lookLastX = touch.clientX;
+    lookLastY = touch.clientY;
+  }, { passive: false });
+
+  lookZone.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    for (let i = 0; i < e.touches.length; i++) {
+      const touch = e.touches[i];
+      if (touch.identifier === lookTouchId) {
+        const deltaX = touch.clientX - lookLastX;
+        const deltaY = touch.clientY - lookLastY;
+        
+        const sensitivity = 0.005;
+        yaw -= deltaX * sensitivity;
+        pitch -= deltaY * sensitivity;
+        pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+        
+        camera.rotation.order = 'YXZ';
+        camera.rotation.y = yaw;
+        camera.rotation.x = pitch;
+        
+        lookLastX = touch.clientX;
+        lookLastY = touch.clientY;
+        break;
+      }
+    }
+  }, { passive: false });
+
+  lookZone.addEventListener('touchend', (e) => {
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === lookTouchId) {
+        lookTouchId = null;
+        break;
+      }
+    }
+  });
+
+  // Up/Down buttons
+  btnUp.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    mobileUp = true;
+    btnUp.classList.add('active');
+  }, { passive: false });
+
+  btnUp.addEventListener('touchend', () => {
+    mobileUp = false;
+    btnUp.classList.remove('active');
+  });
+
+  btnDown.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    mobileDown = true;
+    btnDown.classList.add('active');
+  }, { passive: false });
+
+  btnDown.addEventListener('touchend', () => {
+    mobileDown = false;
+    btnDown.classList.remove('active');
+  });
+}
+
+function updateJoystick(touchX: number, touchY: number, stick: HTMLElement): void {
+  const maxDistance = 40;
+  
+  let deltaX = touchX - joystickStartX;
+  let deltaY = touchY - joystickStartY;
+  
+  const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+  if (distance > maxDistance) {
+    deltaX = (deltaX / distance) * maxDistance;
+    deltaY = (deltaY / distance) * maxDistance;
+  }
+  
+  // Normalize to -1 to 1
+  joystickDeltaX = deltaX / maxDistance;
+  joystickDeltaY = deltaY / maxDistance;
+  
+  // Update visual position
+  stick.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
 }
 
 // ============================================================================
