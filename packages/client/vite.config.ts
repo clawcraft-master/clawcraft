@@ -17,6 +17,9 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         signup: resolve(__dirname, 'signup.html'),
+        leaderboard: resolve(__dirname, 'leaderboard.html'),
+        agents: resolve(__dirname, 'agents.html'),
+        profile: resolve(__dirname, 'profile.html'),
       },
     },
   },
