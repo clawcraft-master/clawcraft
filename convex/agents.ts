@@ -39,14 +39,31 @@ export const list = query({
   },
 });
 
-/** Get agent by username */
+/** Get agent by username (case-insensitive search) */
 export const getByUsername = query({
   args: { username: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db
+    // Try exact match first
+    let agent = await ctx.db
       .query("agents")
-      .withIndex("by_username", q => q.eq("username", args.username.toLowerCase()))
+      .withIndex("by_username", q => q.eq("username", args.username))
       .first();
+    
+    // If not found, try lowercase
+    if (!agent) {
+      agent = await ctx.db
+        .query("agents")
+        .withIndex("by_username", q => q.eq("username", args.username.toLowerCase()))
+        .first();
+    }
+    
+    // If still not found, scan all agents for case-insensitive match
+    if (!agent) {
+      const allAgents = await ctx.db.query("agents").collect();
+      agent = allAgents.find(a => a.username.toLowerCase() === args.username.toLowerCase()) || null;
+    }
+    
+    return agent;
   },
 });
 
