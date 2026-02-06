@@ -94,7 +94,7 @@ function setBlockAt(blocks: number[], localX: number, localY: number, localZ: nu
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/admin/stats", "/admin/reset", "/admin/pregenerate"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/admin/stats", "/admin/reset", "/admin/pregenerate"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -445,6 +445,208 @@ http.route({
         nearbyAgents,
         landmarks,
         radius,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /agent/map - Get a 2D map of the world around a position
+ * Header: Authorization: Bearer <token>
+ * Query: ?centerX=0&centerZ=0&radius=50 (default: agent position, radius 50, max 100)
+ * Returns: heightmap, surface blocks, agents, structures
+ */
+http.route({
+  path: "/agent/map",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const url = new URL(request.url);
+      const agentPos = agent.position || { x: 0, y: 64, z: 0 };
+      const centerX = parseInt(url.searchParams.get("centerX") || String(Math.floor(agentPos.x)));
+      const centerZ = parseInt(url.searchParams.get("centerZ") || String(Math.floor(agentPos.z)));
+      const radius = Math.min(parseInt(url.searchParams.get("radius") || "50"), 100);
+
+      // Calculate bounds
+      const minX = centerX - radius;
+      const maxX = centerX + radius;
+      const minZ = centerZ - radius;
+      const maxZ = centerZ + radius;
+
+      // Find all chunks needed (we scan Y from 0 to 6 to find surface)
+      const chunkKeys = new Set<string>();
+      for (let x = minX; x <= maxX; x += CHUNK_SIZE) {
+        for (let z = minZ; z <= maxZ; z += CHUNK_SIZE) {
+          const cx = Math.floor(x / CHUNK_SIZE);
+          const cz = Math.floor(z / CHUNK_SIZE);
+          for (let cy = 0; cy <= 6; cy++) {
+            chunkKeys.add(`${cx},${cy},${cz}`);
+          }
+        }
+      }
+      // Add edge chunks
+      const edgeCx = Math.floor(maxX / CHUNK_SIZE);
+      const edgeCz = Math.floor(maxZ / CHUNK_SIZE);
+      for (let cy = 0; cy <= 6; cy++) {
+        chunkKeys.add(`${edgeCx},${cy},${edgeCz}`);
+      }
+
+      // Load chunks
+      const coords = Array.from(chunkKeys).map(key => {
+        const [cx, cy, cz] = key.split(",").map(Number);
+        return { key, cx, cy, cz };
+      });
+
+      const chunks = await ctx.runMutation(api.chunks.getOrGenerateMany, { coords });
+
+      // Decode all chunks
+      const decodedChunks: Map<string, number[]> = new Map();
+      for (const [key, chunk] of Object.entries(chunks)) {
+        if (chunk) {
+          decodedChunks.set(key, decodeBlocks(chunk.blocksBase64));
+        }
+      }
+
+      // Helper to get block at world position
+      const getWorldBlock = (x: number, y: number, z: number): number => {
+        const cx = Math.floor(x / CHUNK_SIZE);
+        const cy = Math.floor(y / CHUNK_SIZE);
+        const cz = Math.floor(z / CHUNK_SIZE);
+        const key = `${cx},${cy},${cz}`;
+        const chunkBlocks = decodedChunks.get(key);
+        if (!chunkBlocks) return 0;
+        const localX = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+        const localY = ((y % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+        const localZ = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+        return getBlockAt(chunkBlocks, localX, localY, localZ);
+      };
+
+      // Build heightmap and surface map
+      const mapSize = radius * 2 + 1;
+      const heightmap: number[][] = [];
+      const surfaceMap: number[][] = [];
+      const structureBlocks: Array<{ x: number; y: number; z: number; blockType: number }> = [];
+
+      for (let dz = 0; dz < mapSize; dz++) {
+        heightmap[dz] = [];
+        surfaceMap[dz] = [];
+        for (let dx = 0; dx < mapSize; dx++) {
+          const worldX = minX + dx;
+          const worldZ = minZ + dz;
+
+          // Find surface height (highest non-air block)
+          let surfaceY = 0;
+          let surfaceBlock = 0;
+          for (let y = 100; y >= 0; y--) {
+            const block = getWorldBlock(worldX, y, worldZ);
+            if (block !== BLOCK_TYPES.AIR) {
+              surfaceY = y;
+              surfaceBlock = block;
+              break;
+            }
+          }
+
+          heightmap[dz][dx] = surfaceY;
+          surfaceMap[dz][dx] = surfaceBlock;
+
+          // Detect player-placed structures (wood, stone above grass level)
+          if (surfaceBlock === BLOCK_TYPES.WOOD || surfaceBlock === BLOCK_TYPES.STONE) {
+            if (surfaceY > 66) { // Above typical grass level
+              structureBlocks.push({ x: worldX, y: surfaceY, z: worldZ, blockType: surfaceBlock });
+            }
+          }
+        }
+      }
+
+      // Get all agents
+      const allAgents = await ctx.runQuery(api.game.getOnlineAgents, {});
+      const agentsOnMap = allAgents
+        .filter(a => {
+          const pos = a.position || { x: 0, y: 0, z: 0 };
+          return pos.x >= minX && pos.x <= maxX && pos.z >= minZ && pos.z <= maxZ;
+        })
+        .map(a => ({
+          id: a._id,
+          username: a.username,
+          position: a.position,
+          isYou: a._id === agent._id,
+        }));
+
+      // Detect structures (clusters of non-terrain blocks)
+      const structures: Array<{ center: { x: number; z: number }; type: string; blockCount: number }> = [];
+      
+      // Simple structure detection: find clusters of wood/stone
+      const visited = new Set<string>();
+      for (const block of structureBlocks) {
+        const key = `${block.x},${block.z}`;
+        if (visited.has(key)) continue;
+        
+        // BFS to find cluster
+        const cluster: typeof structureBlocks = [];
+        const queue = [block];
+        while (queue.length > 0) {
+          const current = queue.shift()!;
+          const currentKey = `${current.x},${current.z}`;
+          if (visited.has(currentKey)) continue;
+          visited.add(currentKey);
+          cluster.push(current);
+          
+          // Check neighbors
+          for (const neighbor of structureBlocks) {
+            const dist = Math.abs(neighbor.x - current.x) + Math.abs(neighbor.z - current.z);
+            if (dist <= 2 && !visited.has(`${neighbor.x},${neighbor.z}`)) {
+              queue.push(neighbor);
+            }
+          }
+        }
+        
+        if (cluster.length >= 3) {
+          const avgX = Math.round(cluster.reduce((s, b) => s + b.x, 0) / cluster.length);
+          const avgZ = Math.round(cluster.reduce((s, b) => s + b.z, 0) / cluster.length);
+          const hasWood = cluster.some(b => b.blockType === BLOCK_TYPES.WOOD);
+          const hasStone = cluster.some(b => b.blockType === BLOCK_TYPES.STONE);
+          
+          structures.push({
+            center: { x: avgX, z: avgZ },
+            type: hasWood && hasStone ? "building" : hasWood ? "wooden_structure" : "stone_structure",
+            blockCount: cluster.length,
+          });
+        }
+      }
+
+      // Landmarks
+      const landmarks = [
+        { name: "Spawn", position: { x: 0, z: 0 }, type: "spawn" },
+      ].filter(l => l.position.x >= minX && l.position.x <= maxX && l.position.z >= minZ && l.position.z <= maxZ);
+
+      return jsonResponse({
+        center: { x: centerX, z: centerZ },
+        radius,
+        bounds: { minX, maxX, minZ, maxZ },
+        heightmap,
+        surfaceMap,
+        legend: {
+          blocks: BLOCK_INFO.map(b => ({ id: b.id, name: b.name })),
+        },
+        agents: agentsOnMap,
+        structures,
+        landmarks,
+        you: {
+          position: agentPos,
+          onMap: agentPos.x >= minX && agentPos.x <= maxX && agentPos.z >= minZ && agentPos.z <= maxZ,
+        },
       });
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);

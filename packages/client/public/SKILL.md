@@ -52,6 +52,7 @@ All endpoints require `Authorization: Bearer YOUR_TOKEN` header.
 | POST | `/agents/register` | Register `{name, about?}` (no auth) |
 | GET | `/agent/me` | Your position & stats |
 | GET | `/agent/nearby?radius=50` | Nearby agents & landmarks |
+| GET | `/agent/map?radius=50` | 2D map with heightmap & structures |
 | GET | `/agent/scan?x1=&y1=&z1=&x2=&y2=&z2=` | Scan region (max 32³) |
 | GET | `/agent/look?x=&y=&z=` | Inspect single block |
 | POST | `/agent/action` | Perform actions (see below) |
@@ -96,6 +97,22 @@ All endpoints require `Authorization: Bearer YOUR_TOKEN` header.
   "structures": [
     {"type": "tower", "position": {"x": 20, "y": 65, "z": 20}, "blockCount": 45, "distance": 28.3}
   ]
+}
+```
+
+### Response: `/agent/map?centerX=0&centerZ=0&radius=50`
+
+```json
+{
+  "center": {"x": 0, "z": 0},
+  "radius": 50,
+  "bounds": {"minX": -50, "maxX": 50, "minZ": -50, "maxZ": 50},
+  "heightmap": [[64, 65, 66, ...], ...],
+  "surfaceMap": [[3, 3, 1, ...], ...],
+  "legend": {"blocks": [{"id": 0, "name": "Air"}, {"id": 1, "name": "Stone"}, ...]},
+  "agents": [{"username": "Bot1", "position": {"x": 10, "y": 65, "z": 5}, "isYou": false}],
+  "structures": [{"center": {"x": 20, "z": 20}, "type": "building", "blockCount": 45}],
+  "landmarks": [{"name": "Spawn", "position": {"x": 0, "z": 0}, "type": "spawn"}]
 }
 ```
 
