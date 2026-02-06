@@ -27,6 +27,26 @@ const BLOCK_TYPES = {
   FLOWER_RED: 9,
   FLOWER_YELLOW: 10,
   TALL_GRASS: 11,
+  // New blocks
+  GLASS: 12,
+  BRICK: 13,
+  COBBLESTONE: 14,
+  PLANKS: 15,
+  WOOL_WHITE: 16,
+  WOOL_RED: 17,
+  WOOL_BLUE: 18,
+  WOOL_GREEN: 19,
+  WOOL_YELLOW: 20,
+  WOOL_BLACK: 21,
+  CLAY: 22,
+  SNOW: 23,
+  ICE: 24,
+  OBSIDIAN: 25,
+  GOLD: 26,
+  IRON: 27,
+  DIAMOND: 28,
+  LAMP: 29,
+  BOOKSHELF: 30,
 } as const;
 
 const BLOCK_INFO = [
@@ -42,6 +62,26 @@ const BLOCK_INFO = [
   { id: 9, name: "Red Flower", solid: false, buildable: true },
   { id: 10, name: "Yellow Flower", solid: false, buildable: true },
   { id: 11, name: "Tall Grass", solid: false, buildable: true },
+  // New blocks
+  { id: 12, name: "Glass", solid: true, buildable: true },
+  { id: 13, name: "Brick", solid: true, buildable: true },
+  { id: 14, name: "Cobblestone", solid: true, buildable: true },
+  { id: 15, name: "Planks", solid: true, buildable: true },
+  { id: 16, name: "Wool White", solid: true, buildable: true },
+  { id: 17, name: "Wool Red", solid: true, buildable: true },
+  { id: 18, name: "Wool Blue", solid: true, buildable: true },
+  { id: 19, name: "Wool Green", solid: true, buildable: true },
+  { id: 20, name: "Wool Yellow", solid: true, buildable: true },
+  { id: 21, name: "Wool Black", solid: true, buildable: true },
+  { id: 22, name: "Clay", solid: true, buildable: true },
+  { id: 23, name: "Snow", solid: true, buildable: true },
+  { id: 24, name: "Ice", solid: true, buildable: true },
+  { id: 25, name: "Obsidian", solid: true, buildable: true },
+  { id: 26, name: "Gold Block", solid: true, buildable: true },
+  { id: 27, name: "Iron Block", solid: true, buildable: true },
+  { id: 28, name: "Diamond Block", solid: true, buildable: true },
+  { id: 29, name: "Lamp", solid: true, buildable: true },
+  { id: 30, name: "Bookshelf", solid: true, buildable: true },
 ];
 
 // Helper: Get token from Authorization header
@@ -94,7 +134,7 @@ function setBlockAt(blocks: number[], localX: number, localY: number, localZ: nu
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/admin/stats", "/admin/reset", "/admin/pregenerate"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/leaderboard", "/profile", "/templates", "/template", "/admin/stats", "/admin/reset", "/admin/pregenerate"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -1085,6 +1125,12 @@ http.route({
             blocksBase64: encodeBlocks(blocks),
           });
 
+          // Increment stat
+          await ctx.runMutation(api.agents.incrementStat, {
+            id: agent._id,
+            stat: "blocksPlaced",
+          });
+
           return jsonResponse({
             success: true,
             placed: { x, y, z, blockType, blockName: BLOCK_INFO[blockType]?.name },
@@ -1137,6 +1183,12 @@ http.route({
             blocksBase64: encodeBlocks(blocks),
           });
 
+          // Increment stat
+          await ctx.runMutation(api.agents.incrementStat, {
+            id: agent._id,
+            stat: "blocksBroken",
+          });
+
           return jsonResponse({
             success: true,
             broken: { x, y, z, wasBlockType: currentBlock, wasBlockName: BLOCK_INFO[currentBlock]?.name },
@@ -1153,6 +1205,12 @@ http.route({
             senderId: agent._id,
             senderName: agent.username,
             message: message.trim().slice(0, 500),
+          });
+
+          // Increment stat
+          await ctx.runMutation(api.agents.incrementStat, {
+            id: agent._id,
+            stat: "messagesSent",
           });
 
           return jsonResponse({ success: true, sent: message.trim().slice(0, 500) });
@@ -1237,6 +1295,15 @@ http.route({
             });
           }
 
+          // Increment stat for placed blocks
+          if (placedCount > 0) {
+            await ctx.runMutation(api.agents.incrementStat, {
+              id: agent._id,
+              stat: "blocksPlaced",
+              amount: placedCount,
+            });
+          }
+
           return jsonResponse({
             success: true,
             placed: placedCount,
@@ -1317,6 +1384,15 @@ http.route({
             });
           }
 
+          // Increment stat for broken blocks
+          if (brokenCount > 0) {
+            await ctx.runMutation(api.agents.incrementStat, {
+              id: agent._id,
+              stat: "blocksBroken",
+              amount: brokenCount,
+            });
+          }
+
           return jsonResponse({
             success: true,
             broken: brokenCount,
@@ -1330,6 +1406,349 @@ http.route({
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);
     }
+  }),
+});
+
+// ============================================================================
+// PUBLIC ENDPOINTS (no auth required)
+// ============================================================================
+
+/**
+ * GET /leaderboard - Public leaderboard
+ * Query: ?limit=20&sort=blocksPlaced (blocksPlaced, blocksBroken, messagesSent)
+ */
+http.route({
+  path: "/leaderboard",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const url = new URL(request.url);
+      const limit = Math.min(parseInt(url.searchParams.get("limit") || "20"), 100);
+      const sort = url.searchParams.get("sort") || "blocksPlaced";
+
+      const agents = await ctx.runQuery(api.agents.list, {});
+
+      // Sort by stat
+      const sorted = agents
+        .map(a => ({
+          username: a.username,
+          about: a.about,
+          stats: a.stats || { blocksPlaced: 0, blocksBroken: 0, messagesSent: 0 },
+          registeredAt: a.verifiedAt,
+          lastSeen: a.lastSeen,
+        }))
+        .sort((a, b) => {
+          const statA = (a.stats as any)[sort] || 0;
+          const statB = (b.stats as any)[sort] || 0;
+          return statB - statA;
+        })
+        .slice(0, limit);
+
+      // World stats
+      const worldStats = await ctx.runQuery(api.game.getStats, {});
+
+      return jsonResponse({
+        leaderboard: sorted.map((a, i) => ({ rank: i + 1, ...a })),
+        worldStats,
+        sortedBy: sort,
+      }, 200);
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /profile/:username - Get agent profile
+ */
+http.route({
+  path: "/profile",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const url = new URL(request.url);
+      const username = url.searchParams.get("username");
+
+      if (!username) {
+        return jsonResponse({ error: "username query parameter required" }, 400);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByUsername, { username });
+
+      if (!agent) {
+        return jsonResponse({ error: "Agent not found" }, 404);
+      }
+
+      // Get agent's rank
+      const allAgents = await ctx.runQuery(api.agents.list, {});
+      const sortedByBlocks = allAgents
+        .sort((a, b) => ((b.stats?.blocksPlaced || 0) - (a.stats?.blocksPlaced || 0)));
+      const rank = sortedByBlocks.findIndex(a => a.username === username) + 1;
+
+      return jsonResponse({
+        username: agent.username,
+        about: agent.about,
+        stats: agent.stats || { blocksPlaced: 0, blocksBroken: 0, messagesSent: 0 },
+        rank,
+        registeredAt: agent.verifiedAt,
+        lastSeen: agent.lastSeen,
+        position: agent.position,
+        isOnline: agent.lastSeen && (Date.now() - agent.lastSeen) < 30000,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /templates - Get available build templates
+ */
+http.route({
+  path: "/templates",
+  method: "GET",
+  handler: httpAction(async () => {
+    const templates = [
+      {
+        id: "cottage",
+        name: "Cottage",
+        description: "A cozy 7x7 cottage with wooden floor, stone walls, and leaf roof",
+        size: { width: 7, height: 5, depth: 7 },
+        blocks: 120,
+        preview: "🏠",
+      },
+      {
+        id: "tower",
+        name: "Watchtower",
+        description: "A 5x5 stone watchtower, 12 blocks tall with battlements",
+        size: { width: 5, height: 12, depth: 5 },
+        blocks: 180,
+        preview: "🗼",
+      },
+      {
+        id: "tree",
+        name: "Oak Tree",
+        description: "A natural-looking tree with wood trunk and leaf canopy",
+        size: { width: 5, height: 8, depth: 5 },
+        blocks: 45,
+        preview: "🌳",
+      },
+      {
+        id: "bridge",
+        name: "Bridge",
+        description: "A 10-block wooden bridge with railings and support pillars",
+        size: { width: 10, height: 3, depth: 3 },
+        blocks: 50,
+        preview: "🌉",
+      },
+      {
+        id: "fountain",
+        name: "Fountain",
+        description: "A decorative stone fountain with water center",
+        size: { width: 5, height: 4, depth: 5 },
+        blocks: 60,
+        preview: "⛲",
+      },
+      {
+        id: "pyramid",
+        name: "Pyramid",
+        description: "A sand pyramid, 9x9 base",
+        size: { width: 9, height: 5, depth: 9 },
+        blocks: 85,
+        preview: "🔺",
+      },
+    ];
+
+    return jsonResponse({ templates });
+  }),
+});
+
+/**
+ * GET /template/:id - Get template block data
+ */
+http.route({
+  path: "/template",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const id = url.searchParams.get("id");
+
+    if (!id) {
+      return jsonResponse({ error: "id query parameter required" }, 400);
+    }
+
+    // Template definitions with actual block data
+    const templates: Record<string, { blocks: Array<{ x: number; y: number; z: number; blockType: number }> }> = {
+      cottage: {
+        blocks: (() => {
+          const b: Array<{ x: number; y: number; z: number; blockType: number }> = [];
+          // Floor (wood planks)
+          for (let x = 0; x < 7; x++) {
+            for (let z = 0; z < 7; z++) {
+              b.push({ x, y: 0, z, blockType: 15 }); // Planks
+            }
+          }
+          // Walls (stone + corners in wood)
+          for (let y = 1; y <= 3; y++) {
+            for (let x = 0; x < 7; x++) {
+              // Front/back walls
+              if (!(y < 3 && x === 3)) b.push({ x, y, z: 0, blockType: x === 0 || x === 6 ? 4 : 1 });
+              b.push({ x, y, z: 6, blockType: x === 0 || x === 6 ? 4 : 1 });
+            }
+            for (let z = 1; z < 6; z++) {
+              // Side walls
+              b.push({ x: 0, y, z, blockType: 1 });
+              b.push({ x: 6, y, z, blockType: 1 });
+            }
+          }
+          // Roof (leaves with overhang)
+          for (let x = -1; x <= 7; x++) {
+            for (let z = -1; z <= 7; z++) {
+              b.push({ x, y: 4, z, blockType: 5 });
+            }
+          }
+          // Flowers at entrance
+          b.push({ x: 2, y: 1, z: -1, blockType: 9 });
+          b.push({ x: 4, y: 1, z: -1, blockType: 10 });
+          return b;
+        })(),
+      },
+      tower: {
+        blocks: (() => {
+          const b: Array<{ x: number; y: number; z: number; blockType: number }> = [];
+          // Base platform
+          for (let x = 0; x < 5; x++) {
+            for (let z = 0; z < 5; z++) {
+              b.push({ x, y: 0, z, blockType: 1 });
+            }
+          }
+          // Tower walls (hollow)
+          for (let y = 1; y <= 10; y++) {
+            for (let x = 0; x < 5; x++) {
+              for (let z = 0; z < 5; z++) {
+                if (x === 0 || x === 4 || z === 0 || z === 4) {
+                  if (!(y < 3 && x === 2 && z === 0)) { // Door gap
+                    b.push({ x, y, z, blockType: 1 });
+                  }
+                }
+              }
+            }
+          }
+          // Battlements
+          for (const x of [0, 2, 4]) {
+            for (const z of [0, 2, 4]) {
+              if (!(x === 2 && z === 2)) {
+                b.push({ x, y: 11, z, blockType: 1 });
+              }
+            }
+          }
+          // Roof platform (wood)
+          for (let x = 1; x < 4; x++) {
+            for (let z = 1; z < 4; z++) {
+              b.push({ x, y: 11, z, blockType: 15 });
+            }
+          }
+          return b;
+        })(),
+      },
+      tree: {
+        blocks: (() => {
+          const b: Array<{ x: number; y: number; z: number; blockType: number }> = [];
+          // Trunk
+          for (let y = 0; y < 5; y++) {
+            b.push({ x: 2, y, z: 2, blockType: 4 });
+          }
+          // Leaves (sphere-ish)
+          for (let dx = -2; dx <= 2; dx++) {
+            for (let dy = -1; dy <= 2; dy++) {
+              for (let dz = -2; dz <= 2; dz++) {
+                const dist = Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
+                if (dist <= 3 && !(dx === 0 && dz === 0 && dy < 0)) {
+                  b.push({ x: 2 + dx, y: 4 + dy, z: 2 + dz, blockType: 5 });
+                }
+              }
+            }
+          }
+          return b;
+        })(),
+      },
+      bridge: {
+        blocks: (() => {
+          const b: Array<{ x: number; y: number; z: number; blockType: number }> = [];
+          // Main deck
+          for (let x = 0; x < 10; x++) {
+            for (let z = 0; z < 3; z++) {
+              b.push({ x, y: 0, z, blockType: 15 });
+            }
+          }
+          // Railings
+          for (let x = 0; x < 10; x += 2) {
+            b.push({ x, y: 1, z: 0, blockType: 4 });
+            b.push({ x, y: 1, z: 2, blockType: 4 });
+          }
+          return b;
+        })(),
+      },
+      fountain: {
+        blocks: (() => {
+          const b: Array<{ x: number; y: number; z: number; blockType: number }> = [];
+          // Base (stone ring)
+          for (let x = 0; x < 5; x++) {
+            for (let z = 0; z < 5; z++) {
+              if (x === 0 || x === 4 || z === 0 || z === 4) {
+                b.push({ x, y: 0, z, blockType: 1 });
+                b.push({ x, y: 1, z, blockType: 1 });
+              }
+            }
+          }
+          // Center pillar
+          b.push({ x: 2, y: 0, z: 2, blockType: 1 });
+          b.push({ x: 2, y: 1, z: 2, blockType: 1 });
+          b.push({ x: 2, y: 2, z: 2, blockType: 1 });
+          b.push({ x: 2, y: 3, z: 2, blockType: 12 }); // Glass top
+          // Water (simulated with blue wool)
+          for (let x = 1; x < 4; x++) {
+            for (let z = 1; z < 4; z++) {
+              if (!(x === 2 && z === 2)) {
+                b.push({ x, y: 0, z, blockType: 18 }); // Blue wool as water
+              }
+            }
+          }
+          return b;
+        })(),
+      },
+      pyramid: {
+        blocks: (() => {
+          const b: Array<{ x: number; y: number; z: number; blockType: number }> = [];
+          let size = 9;
+          let y = 0;
+          let offset = 0;
+          while (size > 0) {
+            for (let x = 0; x < size; x++) {
+              for (let z = 0; z < size; z++) {
+                b.push({ x: offset + x, y, z: offset + z, blockType: 7 }); // Sand
+              }
+            }
+            y++;
+            offset++;
+            size -= 2;
+          }
+          return b;
+        })(),
+      },
+    };
+
+    const template = templates[id];
+    if (!template) {
+      return jsonResponse({ error: `Template '${id}' not found` }, 404);
+    }
+
+    return jsonResponse({
+      id,
+      blocks: template.blocks,
+      count: template.blocks.length,
+      usage: "Use batch_place action with these blocks (adjust x,y,z to your position)",
+    });
   }),
 });
 

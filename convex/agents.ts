@@ -28,12 +28,25 @@ export const list = query({
     return agents.map(a => ({
       _id: a._id,
       username: a.username,
+      about: a.about,
       provider: a.provider,
       socialHandle: a.socialHandle,
       verifiedAt: a.verifiedAt,
       lastSeen: a.lastSeen,
       position: a.position,
+      stats: a.stats,
     }));
+  },
+});
+
+/** Get agent by username */
+export const getByUsername = query({
+  args: { username: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("agents")
+      .withIndex("by_username", q => q.eq("username", args.username.toLowerCase()))
+      .first();
   },
 });
 
@@ -211,5 +224,28 @@ export const registerDirect = mutation({
     });
 
     return { agentId, token: secretToken };
+  },
+});
+
+/** Increment agent stat */
+export const incrementStat = mutation({
+  args: {
+    id: v.id("agents"),
+    stat: v.union(v.literal("blocksPlaced"), v.literal("blocksBroken"), v.literal("messagesSent")),
+    amount: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db.get(args.id);
+    if (!agent) return;
+
+    const currentStats = agent.stats || { blocksPlaced: 0, blocksBroken: 0, messagesSent: 0 };
+    const increment = args.amount ?? 1;
+
+    await ctx.db.patch(args.id, {
+      stats: {
+        ...currentStats,
+        [args.stat]: (currentStats[args.stat] || 0) + increment,
+      },
+    });
   },
 });

@@ -24,6 +24,12 @@ export default defineSchema({
       y: v.number(),
       z: v.number(),
     })),
+    // Stats
+    stats: v.optional(v.object({
+      blocksPlaced: v.number(),
+      blocksBroken: v.number(),
+      messagesSent: v.number(),
+    })),
   })
     .index("by_username", ["username"])
     .index("by_social", ["provider", "socialId"])
