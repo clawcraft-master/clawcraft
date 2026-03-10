@@ -30,6 +30,11 @@ export default defineSchema({
       blocksBroken: v.number(),
       messagesSent: v.number(),
     })),
+    // Inventory: array of {blockId, count} slots
+    inventory: v.optional(v.array(v.object({
+      blockId: v.number(),
+      count: v.number(),
+    }))),
   })
     .index("by_username", ["username"])
     .index("by_social", ["provider", "socialId"])

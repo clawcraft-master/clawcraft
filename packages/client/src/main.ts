@@ -7,6 +7,7 @@ import {
   subscribeToAgents,
   subscribeToChunk,
   subscribeToChat,
+  subscribeToInventory,
   updatePosition,
   sendChat,
   loadOrGenerateChunks,
@@ -15,6 +16,7 @@ import {
   type ConvexAgent,
   type ConvexChunk,
   type ConvexChatMessage,
+  type InventorySlot,
 } from './convex-client';
 
 // ============================================================================
@@ -64,18 +66,25 @@ const MOVE_SPEED = 0.15;
 const FRICTION = 0.8;
 let onGround = false;
 
-// Block interaction
+// Block interaction & inventory
 let selectedBlockIndex = 0;
-const hotbarBlocks = [
-  BlockTypes.STONE,
-  BlockTypes.DIRT,
-  BlockTypes.GRASS,
-  BlockTypes.WOOD,
-  BlockTypes.LEAVES,
-  BlockTypes.SAND,
-];
+let inventory: InventorySlot[] = [];  // Actual inventory from server
 const raycaster = new THREE.Raycaster();
 raycaster.far = 10;
+
+// Get the block type currently selected in hotbar (from inventory)
+function getSelectedBlockType(): number | null {
+  if (inventory.length === 0) return null;
+  const slot = inventory[selectedBlockIndex];
+  return slot ? slot.blockId : null;
+}
+
+// Get count of selected block
+function getSelectedBlockCount(): number {
+  if (inventory.length === 0) return 0;
+  const slot = inventory[selectedBlockIndex];
+  return slot ? slot.count : 0;
+}
 
 // Stats
 let lastTime = performance.now();
@@ -235,7 +244,8 @@ function init(): void {
   document.addEventListener('keydown', (e) => {
     if (document.activeElement?.tagName === 'INPUT') return;
     const num = parseInt(e.key);
-    if (num >= 1 && num <= hotbarBlocks.length) {
+    const maxSlots = Math.min(inventory.length, 9);
+    if (num >= 1 && num <= maxSlots) {
       selectedBlockIndex = num - 1;
       updateHotbar();
     }
@@ -362,6 +372,14 @@ function setupSubscriptions(): void {
       addChatMessageDirect(msg.senderName, msg.message);
     }
   });
+
+  // Subscribe to my inventory (if authenticated)
+  if (!spectatorMode) {
+    subscribeToInventory((newInventory) => {
+      inventory = newInventory;
+      updateHotbar();
+    });
+  }
 }
 
 async function loadInitialChunks(): Promise<void> {
@@ -436,13 +454,22 @@ function onBlockInteract(e: MouseEvent): void {
     // Left click - break block
     const hit = raycastBlock(false);
     if (hit) {
-      breakBlockAt(hit.x, hit.y, hit.z);
+      // Get the block type at this position before breaking
+      const blockType = getBlockAtWorld(hit.x, hit.y, hit.z);
+      if (blockType !== BlockTypes.AIR && blockType !== BlockTypes.BEDROCK) {
+        breakBlockAt(hit.x, hit.y, hit.z, blockType);
+      }
     }
   } else if (e.button === 2) {
-    // Right click - place block
+    // Right click - place block (only if we have blocks in inventory)
+    const blockType = getSelectedBlockType();
+    if (blockType === null) {
+      addChatMessage('System', 'No blocks in inventory! Mine some first.');
+      return;
+    }
     const hit = raycastBlock(true);
     if (hit) {
-      placeBlockAt(hit.x, hit.y, hit.z, hotbarBlocks[selectedBlockIndex] as number);
+      placeBlockAt(hit.x, hit.y, hit.z, blockType);
     }
   }
 }
@@ -456,22 +483,36 @@ async function placeBlockAt(x: number, y: number, z: number, blockType: number):
   const chunk = chunks.get(key);
   if (!chunk) return;
   
-  // Local update
+  // Local update (optimistic)
   const localX = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
   const localY = ((y % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
   const localZ = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
   const index = localX + localY * CHUNK_SIZE + localZ * CHUNK_SIZE * CHUNK_SIZE;
   
+  const previousBlock = chunk.blocks[index];
   chunk.blocks[index] = blockType;
   createChunkMesh(chunk);
   
   // Sync to Convex
-  const { placeBlock } = await import('./convex-client');
-  const blocksBase64 = btoa(String.fromCharCode(...chunk.blocks));
-  await placeBlock(x, y, z, blockType, key, cx, cy, cz, blocksBase64);
+  try {
+    const { placeBlock } = await import('./convex-client');
+    const blocksBase64 = btoa(String.fromCharCode(...chunk.blocks));
+    const result = await placeBlock(x, y, z, blockType, key, cx, cy, cz, blocksBase64);
+    
+    // Update local inventory from server response
+    if (result.inventory) {
+      inventory = result.inventory;
+      updateHotbar();
+    }
+  } catch (err: any) {
+    // Revert optimistic update on error
+    chunk.blocks[index] = previousBlock;
+    createChunkMesh(chunk);
+    addChatMessage('System', err.message || 'Failed to place block');
+  }
 }
 
-async function breakBlockAt(x: number, y: number, z: number): Promise<void> {
+async function breakBlockAt(x: number, y: number, z: number, blockType: number): Promise<void> {
   const cx = Math.floor(x / CHUNK_SIZE);
   const cy = Math.floor(y / CHUNK_SIZE);
   const cz = Math.floor(z / CHUNK_SIZE);
@@ -480,19 +521,33 @@ async function breakBlockAt(x: number, y: number, z: number): Promise<void> {
   const chunk = chunks.get(key);
   if (!chunk) return;
   
-  // Local update
+  // Local update (optimistic)
   const localX = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
   const localY = ((y % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
   const localZ = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
   const index = localX + localY * CHUNK_SIZE + localZ * CHUNK_SIZE * CHUNK_SIZE;
   
+  const previousBlock = chunk.blocks[index];
   chunk.blocks[index] = BlockTypes.AIR;
   createChunkMesh(chunk);
   
   // Sync to Convex
-  const { breakBlock } = await import('./convex-client');
-  const blocksBase64 = btoa(String.fromCharCode(...chunk.blocks));
-  await breakBlock(x, y, z, key, blocksBase64);
+  try {
+    const { breakBlock } = await import('./convex-client');
+    const blocksBase64 = btoa(String.fromCharCode(...chunk.blocks));
+    const result = await breakBlock(x, y, z, blockType, key, blocksBase64);
+    
+    // Update local inventory from server response
+    if (result.inventory) {
+      inventory = result.inventory;
+      updateHotbar();
+    }
+  } catch (err: any) {
+    // Revert optimistic update on error
+    chunk.blocks[index] = previousBlock;
+    createChunkMesh(chunk);
+    addChatMessage('System', err.message || 'Failed to break block');
+  }
 }
 
 function raycastBlock(placeMode: boolean): Vec3 | null {
@@ -1171,14 +1226,35 @@ function updateHotbar(): void {
   if (!container) return;
   
   container.innerHTML = '';
-  const blockNames = ['Stone', 'Dirt', 'Grass', 'Wood', 'Leaves', 'Sand'];
   
-  for (let i = 0; i < hotbarBlocks.length; i++) {
-    const slot = document.createElement('div');
-    slot.className = 'hotbar-slot' + (i === selectedBlockIndex ? ' selected' : '');
-    slot.innerHTML = `<span class="key">${i + 1}</span><span class="name">${blockNames[i]}</span>`;
-    slot.style.backgroundColor = '#' + (blockColors[hotbarBlocks[i] as keyof typeof blockColors] ?? 0xff00ff).toString(16).padStart(6, '0');
-    container.appendChild(slot);
+  if (inventory.length === 0) {
+    // Show empty state
+    const emptySlot = document.createElement('div');
+    emptySlot.className = 'hotbar-slot empty';
+    emptySlot.innerHTML = `<span class="name">Mine blocks to collect!</span>`;
+    emptySlot.style.backgroundColor = '#333';
+    container.appendChild(emptySlot);
+    return;
+  }
+  
+  // Show up to 9 inventory slots
+  const maxSlots = Math.min(inventory.length, 9);
+  for (let i = 0; i < maxSlots; i++) {
+    const slot = inventory[i];
+    const def = BlockDefinitions[slot.blockId as keyof typeof BlockDefinitions];
+    const blockName = def?.name ?? `Block ${slot.blockId}`;
+    const blockColor = blockColors[slot.blockId as keyof typeof blockColors] ?? 0xff00ff;
+    
+    const slotEl = document.createElement('div');
+    slotEl.className = 'hotbar-slot' + (i === selectedBlockIndex ? ' selected' : '');
+    slotEl.innerHTML = `<span class="key">${i + 1}</span><span class="count">x${slot.count}</span><span class="name">${blockName}</span>`;
+    slotEl.style.backgroundColor = '#' + blockColor.toString(16).padStart(6, '0');
+    container.appendChild(slotEl);
+  }
+  
+  // Clamp selected index to available slots
+  if (selectedBlockIndex >= maxSlots) {
+    selectedBlockIndex = Math.max(0, maxSlots - 1);
   }
 }
 

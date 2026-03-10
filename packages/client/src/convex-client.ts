@@ -39,6 +39,11 @@ export interface ConvexChatMessage {
   message: string;
 }
 
+export interface InventorySlot {
+  blockId: number;
+  count: number;
+}
+
 // Singleton client
 let client: ConvexClient | null = null;
 let myAgentId: string | null = null;
@@ -48,15 +53,18 @@ let myAgentName: string | null = null;
 type AgentsCallback = (agents: ConvexAgent[]) => void;
 type ChunkCallback = (chunk: ConvexChunk) => void;
 type ChatCallback = (messages: ConvexChatMessage[]) => void;
+type InventoryCallback = (inventory: InventorySlot[]) => void;
 
 let onAgentsUpdate: AgentsCallback | null = null;
 let onChunkUpdate: Map<string, ChunkCallback> = new Map();
 let onChatUpdate: ChatCallback | null = null;
+let onInventoryUpdate: InventoryCallback | null = null;
 
 // Unsubscribe functions
 let unsubAgents: (() => void) | null = null;
 let unsubChat: (() => void) | null = null;
 let unsubChunks: Map<string, () => void> = new Map();
+let unsubInventory: (() => void) | null = null;
 
 /**
  * Initialize the Convex client
@@ -179,6 +187,33 @@ export function subscribeToChat(callback: ChatCallback): () => void {
   };
 }
 
+/**
+ * Subscribe to my inventory
+ */
+export function subscribeToInventory(callback: InventoryCallback): () => void {
+  if (!myAgentId) {
+    console.warn("Cannot subscribe to inventory without agent ID");
+    return () => {};
+  }
+  
+  const c = getConvex();
+  onInventoryUpdate = callback;
+  
+  unsubInventory = c.onUpdate(fnRef("game:getInventory"), { agentId: myAgentId }, (inventory) => {
+    if (onInventoryUpdate) {
+      onInventoryUpdate((inventory ?? []) as InventorySlot[]);
+    }
+  });
+  
+  return () => {
+    onInventoryUpdate = null;
+    if (unsubInventory) {
+      unsubInventory();
+      unsubInventory = null;
+    }
+  };
+}
+
 // ============================================================================
 // MUTATIONS
 // ============================================================================
@@ -214,7 +249,7 @@ export async function sendChat(message: string): Promise<void> {
 }
 
 /**
- * Place a block
+ * Place a block - checks inventory and returns updated inventory
  */
 export async function placeBlock(
   worldX: number, worldY: number, worldZ: number,
@@ -222,35 +257,37 @@ export async function placeBlock(
   chunkKey: string,
   cx: number, cy: number, cz: number,
   updatedBlocksBase64: string
-): Promise<void> {
-  if (!myAgentId) return;
+): Promise<{ success: boolean; inventory: InventorySlot[] }> {
+  if (!myAgentId) return { success: false, inventory: [] };
   const c = getConvex();
-  await c.mutation(fnRef("game:placeBlock"), {
+  return await c.mutation(fnRef("game:placeBlock"), {
     agentId: myAgentId,
     worldX, worldY, worldZ,
     blockType,
     chunkKey,
     cx, cy, cz,
     updatedBlocksBase64,
-  });
+  }) as { success: boolean; inventory: InventorySlot[] };
 }
 
 /**
- * Break a block
+ * Break a block - returns updated inventory
  */
 export async function breakBlock(
   worldX: number, worldY: number, worldZ: number,
+  blockType: number,
   chunkKey: string,
   updatedBlocksBase64: string
-): Promise<void> {
-  if (!myAgentId) return;
+): Promise<{ success: boolean; inventory: InventorySlot[] }> {
+  if (!myAgentId) return { success: false, inventory: [] };
   const c = getConvex();
-  await c.mutation(fnRef("game:breakBlock"), {
+  return await c.mutation(fnRef("game:breakBlock"), {
     agentId: myAgentId,
     worldX, worldY, worldZ,
+    blockType,
     chunkKey,
     updatedBlocksBase64,
-  });
+  }) as { success: boolean; inventory: InventorySlot[] };
 }
 
 /**
@@ -278,16 +315,19 @@ export function disconnect(): void {
   // Unsubscribe all
   if (unsubAgents) unsubAgents();
   if (unsubChat) unsubChat();
+  if (unsubInventory) unsubInventory();
   for (const unsub of unsubChunks.values()) {
     unsub();
   }
   
   unsubAgents = null;
   unsubChat = null;
+  unsubInventory = null;
   unsubChunks.clear();
   onAgentsUpdate = null;
   onChunkUpdate.clear();
   onChatUpdate = null;
+  onInventoryUpdate = null;
   myAgentId = null;
   myAgentName = null;
   
