@@ -47,7 +47,152 @@ const BLOCK_TYPES = {
   DIAMOND: 28,
   LAMP: 29,
   BOOKSHELF: 30,
+  // More new blocks - Stairs & Slabs
+  STONE_STAIRS: 31,
+  WOOD_STAIRS: 32,
+  STONE_SLAB: 33,
+  WOOD_SLAB: 34,
+  // Concrete colors
+  CONCRETE_WHITE: 35,
+  CONCRETE_RED: 36,
+  CONCRETE_BLUE: 37,
+  CONCRETE_GREEN: 38,
+  CONCRETE_YELLOW: 39,
+  CONCRETE_BLACK: 40,
+  // Biome blocks
+  CACTUS: 41,
+  DEAD_BUSH: 42,
+  GRAVEL: 43,
 } as const;
+
+// Tool definitions
+interface ToolDefinition {
+  id: string;
+  name: string;
+  durability: number;
+  miningSpeed: Record<string, number>; // block category -> speed multiplier
+  craftable: boolean;
+}
+
+const TOOL_TYPES: Record<string, ToolDefinition> = {
+  wooden_pickaxe: {
+    id: "wooden_pickaxe",
+    name: "Wooden Pickaxe",
+    durability: 60,
+    miningSpeed: { stone: 2.0, ore: 1.5 },
+    craftable: true,
+  },
+  stone_pickaxe: {
+    id: "stone_pickaxe",
+    name: "Stone Pickaxe",
+    durability: 132,
+    miningSpeed: { stone: 4.0, ore: 3.0 },
+    craftable: true,
+  },
+  wooden_axe: {
+    id: "wooden_axe",
+    name: "Wooden Axe",
+    durability: 60,
+    miningSpeed: { wood: 2.0 },
+    craftable: true,
+  },
+  stone_axe: {
+    id: "stone_axe",
+    name: "Stone Axe",
+    durability: 132,
+    miningSpeed: { wood: 4.0 },
+    craftable: true,
+  },
+  wooden_shovel: {
+    id: "wooden_shovel",
+    name: "Wooden Shovel",
+    durability: 60,
+    miningSpeed: { dirt: 2.0 },
+    craftable: true,
+  },
+  stone_shovel: {
+    id: "stone_shovel",
+    name: "Stone Shovel",
+    durability: 132,
+    miningSpeed: { dirt: 4.0 },
+    craftable: true,
+  },
+};
+
+// Block categories for tool effectiveness
+const BLOCK_CATEGORIES: Record<number, string> = {
+  [BLOCK_TYPES.STONE]: "stone",
+  [BLOCK_TYPES.COBBLESTONE]: "stone",
+  [BLOCK_TYPES.BRICK]: "stone",
+  [BLOCK_TYPES.OBSIDIAN]: "stone",
+  [BLOCK_TYPES.GOLD]: "ore",
+  [BLOCK_TYPES.IRON]: "ore",
+  [BLOCK_TYPES.DIAMOND]: "ore",
+  [BLOCK_TYPES.WOOD]: "wood",
+  [BLOCK_TYPES.PLANKS]: "wood",
+  [BLOCK_TYPES.BOOKSHELF]: "wood",
+  [BLOCK_TYPES.WOOD_STAIRS]: "wood",
+  [BLOCK_TYPES.WOOD_SLAB]: "wood",
+  [BLOCK_TYPES.DIRT]: "dirt",
+  [BLOCK_TYPES.GRASS]: "dirt",
+  [BLOCK_TYPES.SAND]: "dirt",
+  [BLOCK_TYPES.GRAVEL]: "dirt",
+  [BLOCK_TYPES.CLAY]: "dirt",
+  [BLOCK_TYPES.SNOW]: "dirt",
+};
+
+// Achievement definitions
+interface AchievementDefinition {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+}
+
+const ACHIEVEMENTS: Record<string, AchievementDefinition> = {
+  first_block_placed: {
+    id: "first_block_placed",
+    name: "First Steps",
+    description: "Place your first block",
+    icon: "🧱",
+  },
+  first_block_broken: {
+    id: "first_block_broken",
+    name: "Breaking Ground",
+    description: "Break your first block",
+    icon: "⛏️",
+  },
+  blocks_100: {
+    id: "blocks_100",
+    name: "Builder",
+    description: "Place 100 blocks",
+    icon: "🏗️",
+  },
+  blocks_1000: {
+    id: "blocks_1000",
+    name: "Master Builder",
+    description: "Place 1000 blocks",
+    icon: "🏰",
+  },
+  first_chat: {
+    id: "first_chat",
+    name: "Hello World",
+    description: "Send your first chat message",
+    icon: "💬",
+  },
+  explorer: {
+    id: "explorer",
+    name: "Explorer",
+    description: "Travel 500 blocks from spawn",
+    icon: "🧭",
+  },
+  builder: {
+    id: "builder",
+    name: "Dedicated Builder",
+    description: "Place 500 blocks total",
+    icon: "🔨",
+  },
+};
 
 const BLOCK_INFO = [
   { id: 0, name: "Air", solid: false, buildable: false },
@@ -82,6 +227,22 @@ const BLOCK_INFO = [
   { id: 28, name: "Diamond Block", solid: true, buildable: true },
   { id: 29, name: "Lamp", solid: true, buildable: true },
   { id: 30, name: "Bookshelf", solid: true, buildable: true },
+  // Stairs & Slabs
+  { id: 31, name: "Stone Stairs", solid: true, buildable: true },
+  { id: 32, name: "Wood Stairs", solid: true, buildable: true },
+  { id: 33, name: "Stone Slab", solid: true, buildable: true },
+  { id: 34, name: "Wood Slab", solid: true, buildable: true },
+  // Concrete colors
+  { id: 35, name: "Concrete White", solid: true, buildable: true },
+  { id: 36, name: "Concrete Red", solid: true, buildable: true },
+  { id: 37, name: "Concrete Blue", solid: true, buildable: true },
+  { id: 38, name: "Concrete Green", solid: true, buildable: true },
+  { id: 39, name: "Concrete Yellow", solid: true, buildable: true },
+  { id: 40, name: "Concrete Black", solid: true, buildable: true },
+  // Biome blocks
+  { id: 41, name: "Cactus", solid: true, buildable: true },
+  { id: 42, name: "Dead Bush", solid: false, buildable: true },
+  { id: 43, name: "Gravel", solid: true, buildable: true },
 ];
 
 // Helper: Get token from Authorization header
@@ -136,6 +297,59 @@ interface InventorySlot {
   count: number;
 }
 
+// Helper: Tool slot type
+interface ToolSlot {
+  toolId: string;
+  durability: number;
+}
+
+// Helper: Calculate mining speed with tool
+function getMiningSpeed(blockType: number, toolId: string | null): number {
+  const baseMiningTime = 1.0; // Base time in "ticks"
+  
+  if (!toolId) return baseMiningTime;
+  
+  const tool = TOOL_TYPES[toolId];
+  if (!tool) return baseMiningTime;
+  
+  const blockCategory = BLOCK_CATEGORIES[blockType];
+  if (!blockCategory) return baseMiningTime;
+  
+  const speedMultiplier = tool.miningSpeed[blockCategory] || 1.0;
+  return baseMiningTime / speedMultiplier;
+}
+
+// Helper: Use tool (reduce durability)
+function useTool(tools: ToolSlot[], toolId: string): { tools: ToolSlot[]; broken: boolean } {
+  const newTools = [...tools];
+  const toolIndex = newTools.findIndex(t => t.toolId === toolId);
+  
+  if (toolIndex === -1) {
+    return { tools: newTools, broken: false };
+  }
+  
+  newTools[toolIndex] = {
+    ...newTools[toolIndex],
+    durability: newTools[toolIndex].durability - 1,
+  };
+  
+  // Check if tool broke
+  if (newTools[toolIndex].durability <= 0) {
+    newTools.splice(toolIndex, 1);
+    return { tools: newTools, broken: true };
+  }
+  
+  return { tools: newTools, broken: false };
+}
+
+// Helper: Add tool to inventory
+function addToolToInventory(tools: ToolSlot[], toolId: string): ToolSlot[] {
+  const toolDef = TOOL_TYPES[toolId];
+  if (!toolDef) return tools;
+  
+  return [...tools, { toolId, durability: toolDef.durability }];
+}
+
 // Helper: Add block to inventory
 function addToInventory(inventory: InventorySlot[], blockId: number, count: number = 1): InventorySlot[] {
   // Don't add non-collectible blocks (air, water, bedrock)
@@ -183,7 +397,7 @@ function removeFromInventory(inventory: InventorySlot[], blockId: number, count:
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/agent/inventory", "/leaderboard", "/profile", "/templates", "/template", "/admin/stats", "/admin/reset", "/admin/pregenerate", "/admin/clear-chunks", "/admin/reset-inventories"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/agent/inventory", "/agent/tools", "/agent/equip", "/agent/craft", "/agent/waypoints", "/agent/achievements", "/leaderboard", "/profile", "/templates", "/template", "/admin/stats", "/admin/reset", "/admin/pregenerate", "/admin/clear-chunks", "/admin/reset-inventories"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -497,6 +711,380 @@ http.route({
         totalItems: inventory.reduce((sum, slot) => sum + slot.count, 0),
         uniqueTypes: inventory.length,
         tip: "Mine blocks with 'break' action to collect them. You need blocks in inventory to 'place' them!",
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /agent/tools - Get your tools
+ * Header: Authorization: Bearer <token>
+ */
+http.route({
+  path: "/agent/tools",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const tools = (agent.tools ?? []) as ToolSlot[];
+      
+      // Enrich with tool info
+      const enrichedTools = tools.map(slot => {
+        const toolDef = TOOL_TYPES[slot.toolId];
+        return {
+          toolId: slot.toolId,
+          name: toolDef?.name || "Unknown",
+          durability: slot.durability,
+          maxDurability: toolDef?.durability || 0,
+          durabilityPercent: toolDef ? Math.round((slot.durability / toolDef.durability) * 100) : 0,
+        };
+      });
+
+      return jsonResponse({
+        tools: enrichedTools,
+        equippedTool: agent.equippedTool || null,
+        availableTools: Object.values(TOOL_TYPES).map(t => ({
+          id: t.id,
+          name: t.name,
+          durability: t.durability,
+          miningSpeed: t.miningSpeed,
+        })),
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * POST /agent/equip - Equip or unequip a tool
+ * Header: Authorization: Bearer <token>
+ * Body: { toolId: "wooden_pickaxe" } or { toolId: null } to unequip
+ */
+http.route({
+  path: "/agent/equip",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const body = await request.json() as any;
+      const { toolId } = body;
+
+      // Unequip if null
+      if (toolId === null) {
+        await ctx.runMutation(api.agents.equipTool, { id: agent._id, toolId: null });
+        return jsonResponse({ success: true, equipped: null, message: "Unequipped tool, now using bare hands." });
+      }
+
+      // Check if agent has the tool
+      const tools = (agent.tools ?? []) as ToolSlot[];
+      const hasTool = tools.some(t => t.toolId === toolId);
+      
+      if (!hasTool) {
+        return jsonResponse({ error: `You don't have a ${toolId} in your inventory!` }, 400);
+      }
+
+      const toolDef = TOOL_TYPES[toolId];
+      if (!toolDef) {
+        return jsonResponse({ error: `Unknown tool: ${toolId}` }, 400);
+      }
+
+      await ctx.runMutation(api.agents.equipTool, { id: agent._id, toolId });
+      
+      return jsonResponse({
+        success: true,
+        equipped: toolId,
+        toolName: toolDef.name,
+        miningSpeed: toolDef.miningSpeed,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * POST /agent/craft - Craft a tool
+ * Header: Authorization: Bearer <token>
+ * Body: { toolId: "wooden_pickaxe" }
+ */
+http.route({
+  path: "/agent/craft",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const body = await request.json() as any;
+      const { toolId } = body;
+
+      const toolDef = TOOL_TYPES[toolId];
+      if (!toolDef || !toolDef.craftable) {
+        return jsonResponse({ error: `Cannot craft: ${toolId}` }, 400);
+      }
+
+      // Crafting recipes
+      const recipes: Record<string, Array<{ blockId: number; count: number }>> = {
+        wooden_pickaxe: [{ blockId: BLOCK_TYPES.WOOD, count: 3 }, { blockId: BLOCK_TYPES.PLANKS, count: 2 }],
+        stone_pickaxe: [{ blockId: BLOCK_TYPES.COBBLESTONE, count: 3 }, { blockId: BLOCK_TYPES.PLANKS, count: 2 }],
+        wooden_axe: [{ blockId: BLOCK_TYPES.WOOD, count: 3 }, { blockId: BLOCK_TYPES.PLANKS, count: 2 }],
+        stone_axe: [{ blockId: BLOCK_TYPES.COBBLESTONE, count: 3 }, { blockId: BLOCK_TYPES.PLANKS, count: 2 }],
+        wooden_shovel: [{ blockId: BLOCK_TYPES.WOOD, count: 1 }, { blockId: BLOCK_TYPES.PLANKS, count: 2 }],
+        stone_shovel: [{ blockId: BLOCK_TYPES.COBBLESTONE, count: 1 }, { blockId: BLOCK_TYPES.PLANKS, count: 2 }],
+      };
+
+      const recipe = recipes[toolId];
+      if (!recipe) {
+        return jsonResponse({ error: `No recipe for: ${toolId}` }, 400);
+      }
+
+      // Check inventory
+      let inventory = [...((agent.inventory ?? []) as InventorySlot[])];
+      
+      for (const ingredient of recipe) {
+        const slot = inventory.find(s => s.blockId === ingredient.blockId);
+        const have = slot?.count || 0;
+        if (have < ingredient.count) {
+          const blockName = BLOCK_INFO[ingredient.blockId]?.name || `Block ${ingredient.blockId}`;
+          return jsonResponse({
+            error: `Not enough ${blockName}! Need ${ingredient.count}, have ${have}`,
+            recipe: recipe.map(r => ({
+              blockId: r.blockId,
+              blockName: BLOCK_INFO[r.blockId]?.name || "Unknown",
+              count: r.count,
+            })),
+          }, 400);
+        }
+      }
+
+      // Consume ingredients
+      for (const ingredient of recipe) {
+        const result = removeFromInventory(inventory, ingredient.blockId, ingredient.count);
+        if (result) inventory = result;
+      }
+
+      // Add tool
+      const tools = addToolToInventory((agent.tools ?? []) as ToolSlot[], toolId);
+
+      // Save
+      await ctx.runMutation(api.agents.updateInventory, { id: agent._id, inventory });
+      await ctx.runMutation(api.agents.updateTools, { id: agent._id, tools });
+
+      return jsonResponse({
+        success: true,
+        crafted: toolId,
+        toolName: toolDef.name,
+        durability: toolDef.durability,
+        inventory: inventory.map(s => ({ blockId: s.blockId, blockName: BLOCK_INFO[s.blockId]?.name, count: s.count })),
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /agent/waypoints - Get saved waypoints
+ * Header: Authorization: Bearer <token>
+ */
+http.route({
+  path: "/agent/waypoints",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const waypoints = await ctx.runQuery(api.waypoints.list, { agentId: agent._id });
+
+      return jsonResponse({
+        waypoints: waypoints.map(w => ({
+          name: w.name,
+          position: { x: w.x, y: w.y, z: w.z },
+          createdAt: w.createdAt,
+        })),
+        count: waypoints.length,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * POST /agent/waypoints - Save a new waypoint
+ * Header: Authorization: Bearer <token>
+ * Body: { name: "home", x: 10, y: 65, z: 5 }
+ */
+http.route({
+  path: "/agent/waypoints",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const body = await request.json() as any;
+      const { name, x, y, z } = body;
+
+      if (!name || typeof name !== "string") {
+        return jsonResponse({ error: "name is required" }, 400);
+      }
+      if (typeof x !== "number" || typeof y !== "number" || typeof z !== "number") {
+        return jsonResponse({ error: "x, y, z coordinates are required" }, 400);
+      }
+
+      // Limit waypoints per agent (max 20)
+      const existing = await ctx.runQuery(api.waypoints.list, { agentId: agent._id });
+      if (existing.length >= 20) {
+        return jsonResponse({ error: "Maximum 20 waypoints allowed. Delete some first." }, 400);
+      }
+
+      // Check if name already exists
+      const duplicate = existing.find(w => w.name.toLowerCase() === name.toLowerCase());
+      if (duplicate) {
+        return jsonResponse({ error: `Waypoint '${name}' already exists. Delete it first or use a different name.` }, 400);
+      }
+
+      await ctx.runMutation(api.waypoints.create, {
+        agentId: agent._id,
+        name: name.trim().slice(0, 32),
+        x: Math.floor(x),
+        y: Math.floor(y),
+        z: Math.floor(z),
+      });
+
+      return jsonResponse({
+        success: true,
+        message: `Waypoint '${name}' saved at (${Math.floor(x)}, ${Math.floor(y)}, ${Math.floor(z)})`,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * DELETE /agent/waypoints - Delete a waypoint
+ * Header: Authorization: Bearer <token>
+ * Query: ?name=home
+ */
+http.route({
+  path: "/agent/waypoints",
+  method: "DELETE",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const url = new URL(request.url);
+      const name = url.searchParams.get("name");
+
+      if (!name) {
+        return jsonResponse({ error: "name query parameter required" }, 400);
+      }
+
+      const deleted = await ctx.runMutation(api.waypoints.deleteByName, {
+        agentId: agent._id,
+        name,
+      });
+
+      if (!deleted) {
+        return jsonResponse({ error: `Waypoint '${name}' not found` }, 404);
+      }
+
+      return jsonResponse({
+        success: true,
+        message: `Waypoint '${name}' deleted`,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /agent/achievements - Get your achievements
+ * Header: Authorization: Bearer <token>
+ */
+http.route({
+  path: "/agent/achievements",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const unlocked = await ctx.runQuery(api.achievements.list, { agentId: agent._id });
+      const unlockedIds = new Set(unlocked.map(a => a.achievementId));
+
+      const allAchievements = Object.values(ACHIEVEMENTS).map(a => ({
+        ...a,
+        unlocked: unlockedIds.has(a.id),
+        unlockedAt: unlocked.find(u => u.achievementId === a.id)?.unlockedAt || null,
+      }));
+
+      return jsonResponse({
+        achievements: allAchievements,
+        unlocked: unlocked.length,
+        total: Object.keys(ACHIEVEMENTS).length,
+        progress: `${unlocked.length}/${Object.keys(ACHIEVEMENTS).length}`,
       });
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);

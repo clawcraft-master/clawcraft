@@ -282,3 +282,56 @@ export const updateInventory = mutation({
     });
   },
 });
+
+/** Update agent tools */
+export const updateTools = mutation({
+  args: {
+    id: v.id("agents"),
+    tools: v.array(v.object({ toolId: v.string(), durability: v.number() })),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db.get(args.id);
+    if (!agent) return;
+
+    await ctx.db.patch(args.id, {
+      tools: args.tools,
+    });
+  },
+});
+
+/** Equip or unequip a tool */
+export const equipTool = mutation({
+  args: {
+    id: v.id("agents"),
+    toolId: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db.get(args.id);
+    if (!agent) return;
+
+    await ctx.db.patch(args.id, {
+      equippedTool: args.toolId ?? undefined,
+    });
+  },
+});
+
+/** Update distance traveled stat */
+export const updateDistanceTraveled = mutation({
+  args: {
+    id: v.id("agents"),
+    distance: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db.get(args.id);
+    if (!agent) return;
+
+    const currentStats = agent.stats || { blocksPlaced: 0, blocksBroken: 0, messagesSent: 0, distanceTraveled: 0 };
+
+    await ctx.db.patch(args.id, {
+      stats: {
+        ...currentStats,
+        distanceTraveled: (currentStats.distanceTraveled || 0) + args.distance,
+      },
+    });
+  },
+});

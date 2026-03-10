@@ -896,6 +896,39 @@ const blockColors: Record<number, number> = {
   [BlockTypes.FLOWER_RED]: 0xff3333,
   [BlockTypes.FLOWER_YELLOW]: 0xffff00,
   [BlockTypes.TALL_GRASS]: 0x32cd32,
+  // New block colors
+  12: 0xc0e8ff, // Glass
+  13: 0xa0522d, // Brick
+  14: 0x696969, // Cobblestone
+  15: 0xdeb887, // Planks
+  16: 0xf5f5f5, // Wool White
+  17: 0xcc0000, // Wool Red
+  18: 0x0000cc, // Wool Blue
+  19: 0x00cc00, // Wool Green
+  20: 0xcccc00, // Wool Yellow
+  21: 0x1a1a1a, // Wool Black
+  22: 0xb0a090, // Clay
+  23: 0xfafafa, // Snow
+  24: 0xb0e0ff, // Ice
+  25: 0x1a0a2e, // Obsidian
+  26: 0xffd700, // Gold Block
+  27: 0xc0c0c0, // Iron Block
+  28: 0x00ffff, // Diamond Block
+  29: 0xffffe0, // Lamp
+  30: 0x8b4513, // Bookshelf
+  31: 0x707070, // Stone Stairs
+  32: 0xcd853f, // Wood Stairs
+  33: 0x606060, // Stone Slab
+  34: 0xb8860b, // Wood Slab
+  35: 0xe8e8e8, // Concrete White
+  36: 0xb30000, // Concrete Red
+  37: 0x0000b3, // Concrete Blue
+  38: 0x00b300, // Concrete Green
+  39: 0xb3b300, // Concrete Yellow
+  40: 0x0d0d0d, // Concrete Black
+  41: 0x2e8b57, // Cactus
+  42: 0x8b7355, // Dead Bush
+  43: 0x808080, // Gravel
 };
 
 function createChunkMesh(chunk: Chunk): void {

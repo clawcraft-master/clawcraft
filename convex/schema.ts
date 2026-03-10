@@ -29,12 +29,20 @@ export default defineSchema({
       blocksPlaced: v.number(),
       blocksBroken: v.number(),
       messagesSent: v.number(),
+      distanceTraveled: v.optional(v.number()), // For explorer achievement
     })),
-    // Inventory: array of {blockId, count} slots
+    // Inventory: array of {blockId, count} or {toolId, durability} slots
     inventory: v.optional(v.array(v.object({
       blockId: v.number(),
       count: v.number(),
     }))),
+    // Tool inventory: separate array for tools with durability
+    tools: v.optional(v.array(v.object({
+      toolId: v.string(), // e.g., "wooden_pickaxe"
+      durability: v.number(),
+    }))),
+    // Currently equipped tool (toolId or null for hand)
+    equippedTool: v.optional(v.string()),
   })
     .index("by_username", ["username"])
     .index("by_social", ["provider", "socialId"])
@@ -84,4 +92,25 @@ export default defineSchema({
     expiresAt: v.number(),
   })
     .index("by_code", ["code"]),
+
+  // Waypoints - saved locations for agents
+  waypoints: defineTable({
+    agentId: v.id("agents"),
+    name: v.string(),
+    x: v.number(),
+    y: v.number(),
+    z: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_agent", ["agentId"])
+    .index("by_agent_name", ["agentId", "name"]),
+
+  // Achievements - tracks agent accomplishments
+  achievements: defineTable({
+    agentId: v.id("agents"),
+    achievementId: v.string(), // e.g., "first_block_placed", "blocks_100"
+    unlockedAt: v.number(),
+  })
+    .index("by_agent", ["agentId"])
+    .index("by_agent_achievement", ["agentId", "achievementId"]),
 });
