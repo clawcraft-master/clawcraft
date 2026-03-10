@@ -130,11 +130,60 @@ function setBlockAt(blocks: number[], localX: number, localY: number, localZ: nu
   blocks[index] = blockType;
 }
 
+// Helper: Inventory slot type
+interface InventorySlot {
+  blockId: number;
+  count: number;
+}
+
+// Helper: Add block to inventory
+function addToInventory(inventory: InventorySlot[], blockId: number, count: number = 1): InventorySlot[] {
+  // Don't add non-collectible blocks (air, water, bedrock)
+  const nonCollectible = [0, 6, 8]; // AIR, WATER, BEDROCK
+  if (nonCollectible.includes(blockId)) return inventory;
+  
+  const newInventory = [...inventory];
+  const slotIndex = newInventory.findIndex(slot => slot.blockId === blockId);
+  
+  if (slotIndex !== -1) {
+    newInventory[slotIndex] = {
+      ...newInventory[slotIndex],
+      count: newInventory[slotIndex].count + count,
+    };
+  } else {
+    newInventory.push({ blockId, count });
+  }
+  
+  return newInventory;
+}
+
+// Helper: Remove block from inventory (returns null if not available)
+function removeFromInventory(inventory: InventorySlot[], blockId: number, count: number = 1): InventorySlot[] | null {
+  const newInventory = [...inventory];
+  const slotIndex = newInventory.findIndex(slot => slot.blockId === blockId);
+  
+  if (slotIndex === -1 || newInventory[slotIndex].count < count) {
+    return null; // Not enough blocks
+  }
+  
+  newInventory[slotIndex] = {
+    ...newInventory[slotIndex],
+    count: newInventory[slotIndex].count - count,
+  };
+  
+  // Remove empty slots
+  if (newInventory[slotIndex].count <= 0) {
+    newInventory.splice(slotIndex, 1);
+  }
+  
+  return newInventory;
+}
+
 // ============================================================================
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/leaderboard", "/profile", "/templates", "/template", "/admin/stats", "/admin/reset", "/admin/pregenerate"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/agent/inventory", "/leaderboard", "/profile", "/templates", "/template", "/admin/stats", "/admin/reset", "/admin/pregenerate"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -408,6 +457,46 @@ http.route({
           spawn: { x: 0, y: 65, z: 0 },
           message: "Build near spawn (0, 65, 0) so others can find your creations!",
         },
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /agent/inventory - Get your inventory
+ * Header: Authorization: Bearer <token>
+ */
+http.route({
+  path: "/agent/inventory",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const inventory = (agent.inventory ?? []) as InventorySlot[];
+      
+      // Enrich with block names
+      const enrichedInventory = inventory.map(slot => ({
+        blockId: slot.blockId,
+        blockName: BLOCK_INFO[slot.blockId]?.name || "Unknown",
+        count: slot.count,
+      }));
+
+      return jsonResponse({
+        inventory: enrichedInventory,
+        totalItems: inventory.reduce((sum, slot) => sum + slot.count, 0),
+        uniqueTypes: inventory.length,
+        tip: "Mine blocks with 'break' action to collect them. You need blocks in inventory to 'place' them!",
       });
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);
@@ -1083,6 +1172,19 @@ http.route({
             return jsonResponse({ error: "Invalid or non-buildable block type" }, 400);
           }
 
+          // Check inventory
+          const inventory = (agent.inventory ?? []) as InventorySlot[];
+          const newInventory = removeFromInventory(inventory, blockType);
+          
+          if (newInventory === null) {
+            const blockName = BLOCK_INFO[blockType]?.name || `Block ${blockType}`;
+            return jsonResponse({ 
+              error: `You don't have any ${blockName} in your inventory! Mine some first.`,
+              hint: "Use 'break' action to mine blocks and collect them.",
+              inventory: inventory.map(s => ({ blockId: s.blockId, blockName: BLOCK_INFO[s.blockId]?.name, count: s.count })),
+            }, 400);
+          }
+
           // Get chunk
           const cx = Math.floor(x / CHUNK_SIZE);
           const cy = Math.floor(y / CHUNK_SIZE);
@@ -1125,7 +1227,11 @@ http.route({
             blocksBase64: encodeBlocks(blocks),
           });
 
-          // Increment stat
+          // Update inventory and increment stat
+          await ctx.runMutation(api.agents.updateInventory, {
+            id: agent._id,
+            inventory: newInventory,
+          });
           await ctx.runMutation(api.agents.incrementStat, {
             id: agent._id,
             stat: "blocksPlaced",
@@ -1134,6 +1240,7 @@ http.route({
           return jsonResponse({
             success: true,
             placed: { x, y, z, blockType, blockName: BLOCK_INFO[blockType]?.name },
+            inventory: newInventory.map(s => ({ blockId: s.blockId, blockName: BLOCK_INFO[s.blockId]?.name, count: s.count })),
           });
         }
 
@@ -1183,7 +1290,16 @@ http.route({
             blocksBase64: encodeBlocks(blocks),
           });
 
-          // Increment stat
+          // Add to inventory (unless non-collectible: air, water, bedrock)
+          const inventory = (agent.inventory ?? []) as InventorySlot[];
+          const newInventory = addToInventory(inventory, currentBlock);
+          const collected = currentBlock !== BLOCK_TYPES.AIR && currentBlock !== BLOCK_TYPES.WATER && currentBlock !== BLOCK_TYPES.BEDROCK;
+
+          // Update inventory and increment stat
+          await ctx.runMutation(api.agents.updateInventory, {
+            id: agent._id,
+            inventory: newInventory,
+          });
           await ctx.runMutation(api.agents.incrementStat, {
             id: agent._id,
             stat: "blocksBroken",
@@ -1192,6 +1308,8 @@ http.route({
           return jsonResponse({
             success: true,
             broken: { x, y, z, wasBlockType: currentBlock, wasBlockName: BLOCK_INFO[currentBlock]?.name },
+            collected: collected ? { blockId: currentBlock, blockName: BLOCK_INFO[currentBlock]?.name } : null,
+            inventory: newInventory.map(s => ({ blockId: s.blockId, blockName: BLOCK_INFO[s.blockId]?.name, count: s.count })),
           });
         }
 
@@ -1236,6 +1354,44 @@ http.route({
             }
           }
 
+          // Count required blocks by type
+          const requiredBlocks: Map<number, number> = new Map();
+          for (const b of blockPlacements) {
+            requiredBlocks.set(b.blockType, (requiredBlocks.get(b.blockType) || 0) + 1);
+          }
+
+          // Check inventory has enough of each type
+          let workingInventory = [...((agent.inventory ?? []) as InventorySlot[])];
+          const missingBlocks: Array<{ blockType: number; blockName: string; needed: number; have: number }> = [];
+          
+          for (const [blockType, needed] of requiredBlocks) {
+            const slot = workingInventory.find(s => s.blockId === blockType);
+            const have = slot?.count || 0;
+            if (have < needed) {
+              missingBlocks.push({
+                blockType,
+                blockName: BLOCK_INFO[blockType]?.name || `Block ${blockType}`,
+                needed,
+                have,
+              });
+            }
+          }
+
+          if (missingBlocks.length > 0) {
+            return jsonResponse({
+              error: "Not enough blocks in inventory!",
+              missing: missingBlocks,
+              hint: "Use 'break' action to mine blocks and collect them first.",
+              inventory: workingInventory.map(s => ({ blockId: s.blockId, blockName: BLOCK_INFO[s.blockId]?.name, count: s.count })),
+            }, 400);
+          }
+
+          // Deduct from inventory
+          for (const [blockType, count] of requiredBlocks) {
+            const result = removeFromInventory(workingInventory, blockType, count);
+            if (result) workingInventory = result;
+          }
+
           // Group blocks by chunk
           const chunkBlocks: Map<string, Array<{ x: number; y: number; z: number; blockType: number; localX: number; localY: number; localZ: number }>> = new Map();
           
@@ -1264,7 +1420,7 @@ http.route({
 
           const chunks = await ctx.runMutation(api.chunks.getOrGenerateMany, { coords });
 
-          // Place blocks in each chunk (skip occupied positions)
+          // Place blocks in each chunk (skip occupied positions, refund to inventory)
           let placedCount = 0;
           let skippedCount = 0;
           for (const [key, blocksInChunk] of chunkBlocks) {
@@ -1279,6 +1435,8 @@ http.route({
               const currentBlockInfo = BLOCK_INFO[currentBlock];
               if (currentBlockInfo && currentBlockInfo.solid) {
                 skippedCount++;
+                // Refund the block to inventory
+                workingInventory = addToInventory(workingInventory, b.blockType);
                 continue; // Skip this block, don't overwrite
               }
               setBlockAt(blocks, b.localX, b.localY, b.localZ, b.blockType);
@@ -1295,6 +1453,12 @@ http.route({
             });
           }
 
+          // Update inventory
+          await ctx.runMutation(api.agents.updateInventory, {
+            id: agent._id,
+            inventory: workingInventory,
+          });
+
           // Increment stat for placed blocks
           if (placedCount > 0) {
             await ctx.runMutation(api.agents.incrementStat, {
@@ -1309,6 +1473,7 @@ http.route({
             placed: placedCount,
             skipped: skippedCount,
             chunks: chunkBlocks.size,
+            inventory: workingInventory.map(s => ({ blockId: s.blockId, blockName: BLOCK_INFO[s.blockId]?.name, count: s.count })),
           });
         }
 
@@ -1357,8 +1522,11 @@ http.route({
 
           const chunks = await ctx.runMutation(api.chunks.getOrGenerateMany, { coords });
 
-          // Break blocks in each chunk
+          // Break blocks in each chunk and collect to inventory
           let brokenCount = 0;
+          let workingInventory = [...((agent.inventory ?? []) as InventorySlot[])];
+          const collected: Array<{ blockType: number; blockName: string }> = [];
+
           for (const [key, positionsInChunk] of chunkPositions) {
             const chunk = chunks[key];
             if (!chunk) continue;
@@ -1371,6 +1539,12 @@ http.route({
               if (currentBlock !== BLOCK_TYPES.AIR && currentBlock !== BLOCK_TYPES.BEDROCK) {
                 setBlockAt(blocks, p.localX, p.localY, p.localZ, BLOCK_TYPES.AIR);
                 brokenCount++;
+                
+                // Add to inventory (skip non-collectible like water)
+                if (currentBlock !== BLOCK_TYPES.WATER) {
+                  workingInventory = addToInventory(workingInventory, currentBlock);
+                  collected.push({ blockType: currentBlock, blockName: BLOCK_INFO[currentBlock]?.name || "Unknown" });
+                }
               }
             }
 
@@ -1384,6 +1558,12 @@ http.route({
             });
           }
 
+          // Update inventory
+          await ctx.runMutation(api.agents.updateInventory, {
+            id: agent._id,
+            inventory: workingInventory,
+          });
+
           // Increment stat for broken blocks
           if (brokenCount > 0) {
             await ctx.runMutation(api.agents.incrementStat, {
@@ -1393,10 +1573,18 @@ http.route({
             });
           }
 
+          // Summarize collected blocks
+          const collectedSummary: Record<string, number> = {};
+          for (const c of collected) {
+            collectedSummary[c.blockName] = (collectedSummary[c.blockName] || 0) + 1;
+          }
+
           return jsonResponse({
             success: true,
             broken: brokenCount,
+            collected: collectedSummary,
             chunks: chunkPositions.size,
+            inventory: workingInventory.map(s => ({ blockId: s.blockId, blockName: BLOCK_INFO[s.blockId]?.name, count: s.count })),
           });
         }
 

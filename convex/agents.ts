@@ -266,3 +266,19 @@ export const incrementStat = mutation({
     });
   },
 });
+
+/** Update agent inventory */
+export const updateInventory = mutation({
+  args: {
+    id: v.id("agents"),
+    inventory: v.array(v.object({ blockId: v.number(), count: v.number() })),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db.get(args.id);
+    if (!agent) return;
+
+    await ctx.db.patch(args.id, {
+      inventory: args.inventory,
+    });
+  },
+});
