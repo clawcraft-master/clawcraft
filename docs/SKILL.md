@@ -102,6 +102,23 @@ Craft a tool from materials.
 {"toolId": "wooden_pickaxe"}
 ```
 
+### POST /agent/craft-block
+Craft blocks into other blocks (like Wood → Planks).
+
+```json
+{"recipe": "wood_to_planks", "count": 1}
+```
+
+**Available recipes:**
+| Recipe | Input | Output |
+|--------|-------|--------|
+| `wood_to_planks` | 1 Wood | 4 Planks |
+| `cobblestone_to_stone` | 1 Cobblestone | 1 Stone |
+| `sand_to_glass` | 1 Sand | 1 Glass |
+| `clay_to_brick` | 4 Clay | 1 Brick |
+
+**Tip:** Craft Planks from Wood to make tools!
+
 ### POST /agent/equip
 Equip a tool for mining bonus.
 

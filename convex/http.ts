@@ -397,7 +397,7 @@ function removeFromInventory(inventory: InventorySlot[], blockId: number, count:
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/agent/inventory", "/agent/tools", "/agent/equip", "/agent/craft", "/agent/waypoints", "/agent/achievements", "/leaderboard", "/profile", "/templates", "/template", "/admin/stats", "/admin/reset", "/admin/pregenerate", "/admin/clear-chunks", "/admin/reset-inventories"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/agent/inventory", "/agent/tools", "/agent/equip", "/agent/craft", "/agent/craft-block", "/agent/waypoints", "/agent/achievements", "/leaderboard", "/profile", "/templates", "/template", "/admin/stats", "/admin/reset", "/admin/pregenerate", "/admin/clear-chunks", "/admin/reset-inventories"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -903,6 +903,120 @@ http.route({
         crafted: toolId,
         toolName: toolDef.name,
         durability: toolDef.durability,
+        inventory: inventory.map(s => ({ blockId: s.blockId, blockName: BLOCK_INFO[s.blockId]?.name, count: s.count })),
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * POST /agent/craft-block - Craft blocks from other blocks
+ * Header: Authorization: Bearer <token>
+ * Body: { recipe: "wood_to_planks", count?: 1 }
+ */
+http.route({
+  path: "/agent/craft-block",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const body = await request.json() as any;
+      const { recipe, count = 1 } = body;
+
+      // Block crafting recipes: input -> output (with ratios)
+      const blockRecipes: Record<string, { 
+        input: { blockId: number; amount: number }; 
+        output: { blockId: number; amount: number };
+        name: string;
+      }> = {
+        wood_to_planks: {
+          input: { blockId: BLOCK_TYPES.WOOD, amount: 1 },
+          output: { blockId: BLOCK_TYPES.PLANKS, amount: 4 },
+          name: "Wood → Planks",
+        },
+        cobblestone_to_stone: {
+          input: { blockId: BLOCK_TYPES.COBBLESTONE, amount: 1 },
+          output: { blockId: BLOCK_TYPES.STONE, amount: 1 },
+          name: "Cobblestone → Stone (smelting)",
+        },
+        sand_to_glass: {
+          input: { blockId: BLOCK_TYPES.SAND, amount: 1 },
+          output: { blockId: BLOCK_TYPES.GLASS, amount: 1 },
+          name: "Sand → Glass (smelting)",
+        },
+        clay_to_brick: {
+          input: { blockId: BLOCK_TYPES.CLAY, amount: 4 },
+          output: { blockId: BLOCK_TYPES.BRICK, amount: 1 },
+          name: "Clay → Brick",
+        },
+      };
+
+      if (!recipe) {
+        return jsonResponse({
+          error: "Recipe required",
+          availableRecipes: Object.entries(blockRecipes).map(([id, r]) => ({
+            id,
+            name: r.name,
+            input: { blockId: r.input.blockId, blockName: BLOCK_INFO[r.input.blockId]?.name, amount: r.input.amount },
+            output: { blockId: r.output.blockId, blockName: BLOCK_INFO[r.output.blockId]?.name, amount: r.output.amount },
+          })),
+        }, 400);
+      }
+
+      const recipeData = blockRecipes[recipe];
+      if (!recipeData) {
+        return jsonResponse({ 
+          error: `Unknown recipe: ${recipe}`,
+          availableRecipes: Object.keys(blockRecipes),
+        }, 400);
+      }
+
+      // Check inventory
+      let inventory = [...((agent.inventory ?? []) as InventorySlot[])];
+      const inputNeeded = recipeData.input.amount * count;
+      const slot = inventory.find(s => s.blockId === recipeData.input.blockId);
+      const have = slot?.count || 0;
+
+      if (have < inputNeeded) {
+        const inputName = BLOCK_INFO[recipeData.input.blockId]?.name || "Unknown";
+        return jsonResponse({
+          error: `Not enough ${inputName}! Need ${inputNeeded}, have ${have}`,
+          recipe: recipeData,
+        }, 400);
+      }
+
+      // Remove input blocks
+      const removeResult = removeFromInventory(inventory, recipeData.input.blockId, inputNeeded);
+      if (removeResult) inventory = removeResult;
+
+      // Add output blocks
+      const outputAmount = recipeData.output.amount * count;
+      inventory = addToInventory(inventory, recipeData.output.blockId, outputAmount);
+
+      // Save inventory
+      await ctx.runMutation(api.agents.updateInventory, { id: agent._id, inventory });
+
+      const inputName = BLOCK_INFO[recipeData.input.blockId]?.name || "Unknown";
+      const outputName = BLOCK_INFO[recipeData.output.blockId]?.name || "Unknown";
+
+      return jsonResponse({
+        success: true,
+        crafted: {
+          recipe: recipe,
+          inputUsed: { blockId: recipeData.input.blockId, blockName: inputName, amount: inputNeeded },
+          outputGained: { blockId: recipeData.output.blockId, blockName: outputName, amount: outputAmount },
+        },
         inventory: inventory.map(s => ({ blockId: s.blockId, blockName: BLOCK_INFO[s.blockId]?.name, count: s.count })),
       });
     } catch (err: any) {
@@ -1939,10 +2053,14 @@ http.route({
             stat: "blocksPlaced",
           });
 
+          // Check for new achievements
+          const placeAchievements = await ctx.runMutation(api.achievements.checkAndAward, { agentId: agent._id });
+
           return jsonResponse({
             success: true,
             placed: { x, y, z, blockType, blockName: BLOCK_INFO[blockType]?.name },
             inventory: newInventory.map(s => ({ blockId: s.blockId, blockName: BLOCK_INFO[s.blockId]?.name, count: s.count })),
+            newAchievements: placeAchievements.length > 0 ? placeAchievements : undefined,
           });
         }
 
@@ -2007,11 +2125,15 @@ http.route({
             stat: "blocksBroken",
           });
 
+          // Check for new achievements
+          const breakAchievements = await ctx.runMutation(api.achievements.checkAndAward, { agentId: agent._id });
+
           return jsonResponse({
             success: true,
             broken: { x, y, z, wasBlockType: currentBlock, wasBlockName: BLOCK_INFO[currentBlock]?.name },
             collected: collected ? { blockId: currentBlock, blockName: BLOCK_INFO[currentBlock]?.name } : null,
             inventory: newInventory.map(s => ({ blockId: s.blockId, blockName: BLOCK_INFO[s.blockId]?.name, count: s.count })),
+            newAchievements: breakAchievements.length > 0 ? breakAchievements : undefined,
           });
         }
 
@@ -2033,7 +2155,14 @@ http.route({
             stat: "messagesSent",
           });
 
-          return jsonResponse({ success: true, sent: message.trim().slice(0, 500) });
+          // Check for new achievements
+          const chatAchievements = await ctx.runMutation(api.achievements.checkAndAward, { agentId: agent._id });
+
+          return jsonResponse({ 
+            success: true, 
+            sent: message.trim().slice(0, 500),
+            newAchievements: chatAchievements.length > 0 ? chatAchievements : undefined,
+          });
         }
 
         case "batch_place": {
