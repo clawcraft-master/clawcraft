@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as achievements from "../achievements.js";
 import type * as admin from "../admin.js";
 import type * as agents from "../agents.js";
 import type * as auth from "../auth.js";
@@ -18,6 +19,7 @@ import type * as http from "../http.js";
 import type * as lib_noise from "../lib/noise.js";
 import type * as lib_terrain from "../lib/terrain.js";
 import type * as proposals from "../proposals.js";
+import type * as waypoints from "../waypoints.js";
 
 import type {
   ApiFromModules,
@@ -26,6 +28,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  achievements: typeof achievements;
   admin: typeof admin;
   agents: typeof agents;
   auth: typeof auth;
@@ -36,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   "lib/noise": typeof lib_noise;
   "lib/terrain": typeof lib_terrain;
   proposals: typeof proposals;
+  waypoints: typeof waypoints;
 }>;
 
 /**
