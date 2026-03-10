@@ -117,6 +117,12 @@ export function generateChunk(
  * Determine biome based on temperature and moisture noise
  */
 function getBiomeAt(biomeNoise: SimplexNoise, biomeNoise2: SimplexNoise, worldX: number, worldZ: number): number {
+  // Force PLAINS biome in spawn area (64 block radius)
+  const distFromSpawn = Math.sqrt(worldX * worldX + worldZ * worldZ);
+  if (distFromSpawn < 64) {
+    return Biomes.PLAINS;
+  }
+  
   const scale = 0.005; // Large biome regions
   const temperature = biomeNoise.noise2D(worldX * scale, worldZ * scale);
   const moisture = biomeNoise2.noise2D(worldX * scale + 1000, worldZ * scale + 1000);

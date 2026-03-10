@@ -1581,6 +1581,49 @@ http.route({
         return jsonResponse({ error: "Invalid token" }, 401);
       }
 
+      // Find safe spawn position if agent has no position or is at default
+      let position = agent.position || { x: 0, y: 65, z: 0 };
+      
+      // If spawning at origin, find the surface level
+      if (position.x === 0 && position.z === 0) {
+        // Load chunks around spawn to find safe Y
+        const spawnChunks = await ctx.runMutation(api.chunks.getOrGenerateMany, {
+          coords: [
+            { key: "0,3,0", cx: 0, cy: 3, cz: 0 },
+            { key: "0,4,0", cx: 0, cy: 4, cz: 0 },
+            { key: "0,5,0", cx: 0, cy: 5, cz: 0 },
+          ],
+        });
+        
+        // Find the highest non-air block at (0, z=0) and spawn above it
+        let safeY = 65;
+        for (let cy = 5; cy >= 3; cy--) {
+          const chunk = spawnChunks[`0,${cy},0`];
+          if (chunk) {
+            const blocks = decodeBlocks(chunk.blocksBase64);
+            for (let ly = CHUNK_SIZE - 1; ly >= 0; ly--) {
+              const worldY = cy * CHUNK_SIZE + ly;
+              const blockId = getBlockAt(blocks, 0, ly, 0);
+              const blockInfo = BLOCK_INFO[blockId];
+              if (blockInfo && blockInfo.solid) {
+                safeY = worldY + 1; // Spawn on top of solid block
+                break;
+              }
+            }
+            if (safeY !== 65) break;
+          }
+        }
+        
+        position = { x: 0, y: safeY, z: 0 };
+        
+        // Update agent position to safe spawn
+        await ctx.runMutation(api.agents.updatePosition, {
+          id: agent._id,
+          position,
+          rotation: agent.rotation || { x: 0, y: 0, z: 0 },
+        });
+      }
+
       // Update last seen
       await ctx.runMutation(api.agents.updateLastSeen, { id: agent._id });
 
@@ -1592,11 +1635,11 @@ http.route({
         agent: {
           id: agent._id,
           username: agent.username,
-          position: agent.position || { x: 0, y: 64, z: 0 },
+          position,
           rotation: agent.rotation || { x: 0, y: 0, z: 0 },
         },
         world: {
-          spawnPoint: { x: 0, y: 65, z: 0 },
+          spawnPoint: { x: 0, y: position.y, z: 0 },
           chunkSize: CHUNK_SIZE,
           buildableBlocks: BLOCK_INFO.filter(b => b.buildable),
         },
@@ -1742,13 +1785,84 @@ http.route({
             return jsonResponse({ error: "move requires x, y, z coordinates" }, 400);
           }
           
+          // Get current position
+          const currentPos = agent.position || { x: 0, y: 65, z: 0 };
+          
+          // Limit movement distance (max 10 blocks per action to prevent teleporting)
+          const dx = x - currentPos.x;
+          const dy = y - currentPos.y;
+          const dz = z - currentPos.z;
+          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          
+          if (distance > 10) {
+            return jsonResponse({ 
+              error: `Cannot move more than 10 blocks at once! Distance: ${distance.toFixed(1)} blocks`,
+              hint: "Move in smaller steps.",
+              currentPosition: currentPos,
+            }, 400);
+          }
+          
+          // Check collision at target position (agents are 2 blocks tall)
+          // We check the block at feet level and head level
+          const feetY = Math.floor(y);
+          const headY = Math.floor(y + 1);
+          
+          const checkPositions = [
+            { x: Math.floor(x), y: feetY, z: Math.floor(z) },
+            { x: Math.floor(x), y: headY, z: Math.floor(z) },
+          ];
+          
+          // Load chunks for collision check
+          const chunkKeys = new Set<string>();
+          for (const pos of checkPositions) {
+            const cx = Math.floor(pos.x / CHUNK_SIZE);
+            const cy = Math.floor(pos.y / CHUNK_SIZE);
+            const cz = Math.floor(pos.z / CHUNK_SIZE);
+            chunkKeys.add(`${cx},${cy},${cz}`);
+          }
+          
+          const coords = Array.from(chunkKeys).map(key => {
+            const [cx, cy, cz] = key.split(",").map(Number);
+            return { key, cx, cy, cz };
+          });
+          
+          const chunks = await ctx.runMutation(api.chunks.getOrGenerateMany, { coords });
+          
+          // Check each position for collision
+          for (const pos of checkPositions) {
+            const cx = Math.floor(pos.x / CHUNK_SIZE);
+            const cy = Math.floor(pos.y / CHUNK_SIZE);
+            const cz = Math.floor(pos.z / CHUNK_SIZE);
+            const key = `${cx},${cy},${cz}`;
+            
+            const chunk = chunks[key];
+            if (chunk) {
+              const chunkBlocks = decodeBlocks(chunk.blocksBase64);
+              const localX = ((pos.x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+              const localY = ((pos.y % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+              const localZ = ((pos.z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+              
+              const blockId = getBlockAt(chunkBlocks, localX, localY, localZ);
+              const blockInfo = BLOCK_INFO[blockId];
+              
+              if (blockInfo && blockInfo.solid) {
+                return jsonResponse({ 
+                  error: `Cannot move there - blocked by ${blockInfo.name}!`,
+                  blockedAt: pos,
+                  currentPosition: currentPos,
+                }, 400);
+              }
+            }
+          }
+          
+          // Movement is valid, update position
           await ctx.runMutation(api.game.tick, {
             agentId: agent._id,
             position: { x, y, z },
             rotation: agent.rotation || { x: 0, y: 0, z: 0 },
           });
 
-          return jsonResponse({ success: true, position: { x, y, z } });
+          return jsonResponse({ success: true, position: { x, y, z }, movedDistance: distance.toFixed(2) });
         }
 
         case "place": {
