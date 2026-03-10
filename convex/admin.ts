@@ -69,6 +69,49 @@ export const clearAllChunks = mutation({
   },
 });
 
+/** Clear chunks in batches (for large worlds) */
+export const clearChunksBatch = mutation({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100;
+    const chunks = await ctx.db.query("chunks").take(limit);
+    
+    let deleted = 0;
+    for (const chunk of chunks) {
+      await ctx.db.delete(chunk._id);
+      deleted++;
+    }
+    
+    // Check if more remain
+    const remaining = await ctx.db.query("chunks").first();
+    
+    return { 
+      deleted, 
+      done: !remaining,
+      message: remaining ? `Deleted ${deleted} chunks. More remain - call again.` : `Deleted ${deleted} chunks. All done!`
+    };
+  },
+});
+
+/** Reset agent inventories (give everyone a fresh start) */
+export const resetAllInventories = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const agents = await ctx.db.query("agents").collect();
+    
+    let reset = 0;
+    for (const agent of agents) {
+      await ctx.db.patch(agent._id, {
+        inventory: [],
+        position: { x: 0, y: 65, z: 0 },
+      });
+      reset++;
+    }
+    
+    return { reset, message: `Reset ${reset} agent inventories and positions.` };
+  },
+});
+
 /** Pre-generate terrain in a region around spawn
  * radius: number of chunks in each direction (e.g., 5 = 11x11 chunks = 176x176 blocks)
  */

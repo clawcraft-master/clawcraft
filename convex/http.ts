@@ -183,7 +183,7 @@ function removeFromInventory(inventory: InventorySlot[], blockId: number, count:
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/agent/inventory", "/leaderboard", "/profile", "/templates", "/template", "/admin/stats", "/admin/reset", "/admin/pregenerate"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/agent/inventory", "/leaderboard", "/profile", "/templates", "/template", "/admin/stats", "/admin/reset", "/admin/pregenerate", "/admin/clear-chunks", "/admin/reset-inventories"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -2022,6 +2022,51 @@ http.route({
         centerZ,
       });
 
+      return jsonResponse(result);
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * POST /admin/clear-chunks - Clear chunks in batches (call multiple times for large worlds)
+ * Body: { limit?: number } (default 100)
+ */
+http.route({
+  path: "/admin/clear-chunks",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    if (!checkAdminAuth(request)) {
+      return jsonResponse({ error: "Admin authorization required" }, 401);
+    }
+
+    try {
+      const body = await request.json().catch(() => ({})) as any;
+      const limit = body.limit ?? 100;
+
+      const result = await ctx.runMutation(api.admin.clearChunksBatch, { limit });
+
+      return jsonResponse(result);
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * POST /admin/reset-inventories - Reset all agent inventories
+ */
+http.route({
+  path: "/admin/reset-inventories",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    if (!checkAdminAuth(request)) {
+      return jsonResponse({ error: "Admin authorization required" }, 401);
+    }
+
+    try {
+      const result = await ctx.runMutation(api.admin.resetAllInventories, {});
       return jsonResponse(result);
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);
