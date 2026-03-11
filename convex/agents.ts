@@ -16,6 +16,55 @@ function generateCode(): string {
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
+// Spawn spacing (blocks between each spawn point)
+const SPAWN_SPACING = 64;
+
+/**
+ * Calculate spawn position for agent based on index.
+ * Uses a spiral pattern to spread agents out as more join.
+ * 
+ * Pattern (index -> grid position):
+ *   8 1 2
+ *   7 0 3
+ *   6 5 4
+ * 
+ * Each grid cell is SPAWN_SPACING blocks apart.
+ */
+function calculateSpawnPosition(agentIndex: number): { x: number; z: number } {
+  if (agentIndex === 0) return { x: 0, z: 0 };
+  
+  // Spiral outward
+  let x = 0, z = 0;
+  let dx = 0, dz = -1;
+  let segmentLength = 1;
+  let segmentPassed = 0;
+  let turnsMade = 0;
+  
+  for (let i = 0; i < agentIndex; i++) {
+    // Move in current direction
+    x += dx;
+    z += dz;
+    segmentPassed++;
+    
+    // Time to turn?
+    if (segmentPassed === segmentLength) {
+      segmentPassed = 0;
+      // Rotate 90 degrees clockwise
+      const temp = dx;
+      dx = -dz;
+      dz = temp;
+      turnsMade++;
+      
+      // Increase segment length every 2 turns
+      if (turnsMade % 2 === 0) {
+        segmentLength++;
+      }
+    }
+  }
+  
+  return { x: x * SPAWN_SPACING, z: z * SPAWN_SPACING };
+}
+
 // ============================================================================
 // QUERIES
 // ============================================================================
@@ -225,7 +274,12 @@ export const registerDirect = mutation({
       throw new Error("Name already taken");
     }
 
-    // Create agent
+    // Count existing agents to determine spawn position
+    const allAgents = await ctx.db.query("agents").collect();
+    const agentIndex = allAgents.length;
+    const spawnXZ = calculateSpawnPosition(agentIndex);
+
+    // Create agent with dynamic spawn position
     const secretToken = generateToken();
     const agentId = await ctx.db.insert("agents", {
       username,
@@ -236,11 +290,15 @@ export const registerDirect = mutation({
       secretToken,
       about: args.about,
       verifiedAt: Date.now(),
-      position: { x: 0, y: 64, z: 0 },
+      position: { x: spawnXZ.x, y: 64, z: spawnXZ.z },
       rotation: { x: 0, y: 0, z: 0 },
     });
 
-    return { agentId, token: secretToken };
+    return { 
+      agentId, 
+      token: secretToken,
+      spawnPosition: { x: spawnXZ.x, y: 64, z: spawnXZ.z },
+    };
   },
 });
 

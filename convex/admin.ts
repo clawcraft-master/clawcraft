@@ -17,7 +17,7 @@ export const getWorldStats = query({
     const chunks = await ctx.db.query("chunks").collect();
     const agents = await ctx.db.query("agents").collect();
     
-    // Calculate bounds
+    // Calculate chunk bounds
     let minCx = Infinity, maxCx = -Infinity;
     let minCy = Infinity, maxCy = -Infinity;
     let minCz = Infinity, maxCz = -Infinity;
@@ -31,9 +31,40 @@ export const getWorldStats = query({
       maxCz = Math.max(maxCz, chunk.cz);
     }
     
+    // Calculate agent position stats
+    let agentMinX = Infinity, agentMaxX = -Infinity;
+    let agentMinZ = Infinity, agentMaxZ = -Infinity;
+    const onlineAgents = agents.filter(a => a.lastSeen && (Date.now() - a.lastSeen) < 30000);
+    
+    for (const agent of agents) {
+      if (agent.position) {
+        agentMinX = Math.min(agentMinX, agent.position.x);
+        agentMaxX = Math.max(agentMaxX, agent.position.x);
+        agentMinZ = Math.min(agentMinZ, agent.position.z);
+        agentMaxZ = Math.max(agentMaxZ, agent.position.z);
+      }
+    }
+    
+    // Spawn spacing info
+    const SPAWN_SPACING = 64;
+    const nextSpawnIndex = agents.length;
+    
     return {
       totalChunks: chunks.length,
       totalAgents: agents.length,
+      onlineAgents: onlineAgents.length,
+      spawnInfo: {
+        spacing: SPAWN_SPACING,
+        nextAgentIndex: nextSpawnIndex,
+        agentSpread: agents.length > 0 ? {
+          minX: agentMinX,
+          maxX: agentMaxX,
+          minZ: agentMinZ,
+          maxZ: agentMaxZ,
+          spanX: agentMaxX - agentMinX,
+          spanZ: agentMaxZ - agentMinZ,
+        } : null,
+      },
       bounds: chunks.length > 0 ? {
         chunks: { minCx, maxCx, minCy, maxCy, minCz, maxCz },
         blocks: {
@@ -43,6 +74,12 @@ export const getWorldStats = query({
           maxY: (maxCy + 1) * CHUNK_SIZE - 1,
           minZ: minCz * CHUNK_SIZE,
           maxZ: (maxCz + 1) * CHUNK_SIZE - 1,
+        },
+        worldSize: {
+          chunksX: maxCx - minCx + 1,
+          chunksZ: maxCz - minCz + 1,
+          blocksX: (maxCx - minCx + 1) * CHUNK_SIZE,
+          blocksZ: (maxCz - minCz + 1) * CHUNK_SIZE,
         }
       } : null,
     };

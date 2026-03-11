@@ -516,7 +516,8 @@ http.route({
         success: true,
         agentId: result.agentId,
         token: result.token,
-        message: `Welcome to ClawCraft, ${name}!`,
+        spawnPosition: result.spawnPosition,
+        message: `Welcome to ClawCraft, ${name}! You'll spawn at (${result.spawnPosition.x}, ${result.spawnPosition.z})`,
         howToConnect: {
           step1: "POST /agent/connect with Authorization: Bearer <token>",
           step2: "GET /agent/world to see the world around you",
@@ -1909,48 +1910,53 @@ http.route({
         return jsonResponse({ error: "Invalid token" }, 401);
       }
 
-      // Find safe spawn position if agent has no position or is at default
+      // Get agent's spawn position (set at registration in spiral pattern)
       let position = agent.position || { x: 0, y: 65, z: 0 };
       
-      // If spawning at origin, find the surface level
-      if (position.x === 0 && position.z === 0) {
-        // Load chunks around spawn to find safe Y
-        const spawnChunks = await ctx.runMutation(api.chunks.getOrGenerateMany, {
-          coords: [
-            { key: "0,3,0", cx: 0, cy: 3, cz: 0 },
-            { key: "0,4,0", cx: 0, cy: 4, cz: 0 },
-            { key: "0,5,0", cx: 0, cy: 5, cz: 0 },
-          ],
-        });
-        
-        // Find the highest non-air block at (0, z=0) and spawn above it
-        let safeY = 65;
-        for (let cy = 5; cy >= 3; cy--) {
-          const chunk = spawnChunks[`0,${cy},0`];
-          if (chunk) {
-            const blocks = decodeBlocks(chunk.blocksBase64);
-            for (let ly = CHUNK_SIZE - 1; ly >= 0; ly--) {
-              const worldY = cy * CHUNK_SIZE + ly;
-              const blockId = getBlockAt(blocks, 0, ly, 0);
-              const blockInfo = BLOCK_INFO[blockId];
-              if (blockInfo && blockInfo.solid) {
-                safeY = worldY + 1; // Spawn on top of solid block
-                break;
-              }
+      // Find safe Y level at spawn position (any position, not just origin)
+      // Calculate chunk coordinates for the spawn X/Z
+      const spawnCx = Math.floor(position.x / CHUNK_SIZE);
+      const spawnCz = Math.floor(position.z / CHUNK_SIZE);
+      const localX = ((position.x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+      const localZ = ((position.z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+      
+      // Load vertical chunks at spawn position to find surface
+      const spawnChunks = await ctx.runMutation(api.chunks.getOrGenerateMany, {
+        coords: [
+          { key: `${spawnCx},3,${spawnCz}`, cx: spawnCx, cy: 3, cz: spawnCz },
+          { key: `${spawnCx},4,${spawnCz}`, cx: spawnCx, cy: 4, cz: spawnCz },
+          { key: `${spawnCx},5,${spawnCz}`, cx: spawnCx, cy: 5, cz: spawnCz },
+        ],
+      });
+      
+      // Find the highest non-air block and spawn above it
+      let safeY = 65;
+      for (let cy = 5; cy >= 3; cy--) {
+        const chunk = spawnChunks[`${spawnCx},${cy},${spawnCz}`];
+        if (chunk) {
+          const blocks = decodeBlocks(chunk.blocksBase64);
+          for (let ly = CHUNK_SIZE - 1; ly >= 0; ly--) {
+            const worldY = cy * CHUNK_SIZE + ly;
+            const blockId = getBlockAt(blocks, localX, ly, localZ);
+            const blockInfo = BLOCK_INFO[blockId];
+            if (blockInfo && blockInfo.solid) {
+              safeY = worldY + 1; // Spawn on top of solid block
+              break;
             }
-            if (safeY !== 65) break;
           }
+          if (safeY !== 65) break;
         }
-        
-        position = { x: 0, y: safeY, z: 0 };
-        
-        // Update agent position to safe spawn
-        await ctx.runMutation(api.agents.updatePosition, {
-          id: agent._id,
-          position,
-          rotation: agent.rotation || { x: 0, y: 0, z: 0 },
-        });
       }
+      
+      // Update position with safe Y
+      position = { x: position.x, y: safeY, z: position.z };
+      
+      // Update agent position to safe spawn
+      await ctx.runMutation(api.agents.updatePosition, {
+        id: agent._id,
+        position,
+        rotation: agent.rotation || { x: 0, y: 0, z: 0 },
+      });
 
       // Update last seen
       await ctx.runMutation(api.agents.updateLastSeen, { id: agent._id });
