@@ -169,7 +169,305 @@ export const TASK_DEFINITIONS = [
         needsEnclosure: true,
       },
     },
-    maxPoints: 500, // High points for speed component
+    maxPoints: 500,
+    timeBonus: true,
+  },
+  // ===== NEW TASKS =====
+  {
+    taskId: "build_bridge_20",
+    name: "Bridge Builder",
+    description: "Build a bridge at least 20 blocks long spanning a gap (must be suspended, not touching ground in middle).",
+    category: "building" as const,
+    difficulty: "medium" as const,
+    requirements: {
+      type: "build_structure" as const,
+      params: {
+        minLength: 20,
+        suspended: true,
+      },
+    },
+    maxPoints: 150,
+    timeBonus: true,
+  },
+  {
+    taskId: "build_pyramid",
+    name: "Pyramid Architect",
+    description: "Build a pyramid at least 5 layers tall using sand or stone blocks.",
+    category: "building" as const,
+    difficulty: "medium" as const,
+    requirements: {
+      type: "build_structure" as const,
+      params: {
+        shape: "pyramid",
+        minLayers: 5,
+        allowedBlocks: [1, 7], // Stone, Sand
+      },
+    },
+    maxPoints: 200,
+    timeBonus: true,
+  },
+  {
+    taskId: "build_pixel_art",
+    name: "Pixel Artist",
+    description: "Create a 2D pixel art image using at least 3 different colored wool or concrete blocks. Minimum 8x8.",
+    category: "building" as const,
+    difficulty: "hard" as const,
+    requirements: {
+      type: "build_structure" as const,
+      params: {
+        minWidth: 8,
+        minHeight: 8,
+        flat: true,
+        minBlockTypes: 3,
+        allowedBlocks: [16, 17, 18, 19, 20, 21, 35, 36, 37, 38, 39, 40], // Wool + Concrete
+      },
+    },
+    maxPoints: 350,
+    timeBonus: false,
+  },
+  {
+    taskId: "collect_iron_10",
+    name: "Iron Miner",
+    description: "Collect 10 iron blocks.",
+    category: "mining" as const,
+    difficulty: "medium" as const,
+    requirements: {
+      type: "collect_blocks" as const,
+      params: {
+        blockId: 27, // IRON
+        count: 10,
+      },
+    },
+    maxPoints: 120,
+    timeBonus: true,
+  },
+  {
+    taskId: "collect_gold_5",
+    name: "Gold Rush",
+    description: "Collect 5 gold blocks.",
+    category: "mining" as const,
+    difficulty: "medium" as const,
+    requirements: {
+      type: "collect_blocks" as const,
+      params: {
+        blockId: 26, // GOLD
+        count: 5,
+      },
+    },
+    maxPoints: 150,
+    timeBonus: true,
+  },
+  {
+    taskId: "explore_1000",
+    name: "Long Journey",
+    description: "Travel at least 1000 blocks from your starting position.",
+    category: "exploration" as const,
+    difficulty: "hard" as const,
+    requirements: {
+      type: "reach_location" as const,
+      params: {
+        minDistance: 1000,
+      },
+    },
+    maxPoints: 300,
+    timeBonus: false,
+  },
+  {
+    taskId: "explore_mountain_peak",
+    name: "Summit Seeker",
+    description: "Reach a mountain peak (Y > 100) in the Mountains biome.",
+    category: "exploration" as const,
+    difficulty: "medium" as const,
+    requirements: {
+      type: "reach_location" as const,
+      params: {
+        minY: 100,
+        biome: "mountains",
+      },
+    },
+    maxPoints: 175,
+    timeBonus: true,
+  },
+  {
+    taskId: "explore_ocean_floor",
+    name: "Deep Diver",
+    description: "Reach the ocean floor (Y < 50) in an Ocean biome.",
+    category: "exploration" as const,
+    difficulty: "easy" as const,
+    requirements: {
+      type: "reach_location" as const,
+      params: {
+        maxY: 50,
+        biome: "ocean",
+      },
+    },
+    maxPoints: 75,
+    timeBonus: true,
+  },
+  {
+    taskId: "build_staircase_30",
+    name: "Stairway Builder",
+    description: "Build a staircase at least 30 blocks tall using stair blocks.",
+    category: "building" as const,
+    difficulty: "medium" as const,
+    requirements: {
+      type: "build_structure" as const,
+      params: {
+        minHeight: 30,
+        useStairs: true,
+        allowedBlocks: [31, 32], // Stone/Wood stairs
+      },
+    },
+    maxPoints: 175,
+    timeBonus: true,
+  },
+  {
+    taskId: "build_maze",
+    name: "Maze Maker",
+    description: "Build a maze at least 10x10 with walls 2 blocks high. Must have one entrance and one exit.",
+    category: "building" as const,
+    difficulty: "hard" as const,
+    requirements: {
+      type: "build_structure" as const,
+      params: {
+        minWidth: 10,
+        minDepth: 10,
+        wallHeight: 2,
+        needsEntrance: true,
+        needsExit: true,
+      },
+    },
+    maxPoints: 400,
+    timeBonus: true,
+  },
+  {
+    taskId: "speedrun_tower",
+    name: "Speedrun: Tower",
+    description: "Build a 15-block tall tower as fast as possible.",
+    category: "speedrun" as const,
+    difficulty: "easy" as const,
+    requirements: {
+      type: "build_structure" as const,
+      params: {
+        minHeight: 15,
+      },
+    },
+    maxPoints: 300,
+    timeBonus: true,
+  },
+  {
+    taskId: "speedrun_100_blocks",
+    name: "Speedrun: Mass Builder",
+    description: "Place 100 blocks as fast as possible.",
+    category: "speedrun" as const,
+    difficulty: "medium" as const,
+    requirements: {
+      type: "custom" as const,
+      params: {
+        customType: "place_blocks",
+        count: 100,
+      },
+    },
+    maxPoints: 400,
+    timeBonus: true,
+  },
+  {
+    taskId: "efficiency_shelter",
+    name: "Efficient Shelter",
+    description: "Build an enclosed shelter using exactly 27 blocks (no more, no less). 3x3x3 with door.",
+    category: "building" as const,
+    difficulty: "hard" as const,
+    requirements: {
+      type: "build_structure" as const,
+      params: {
+        exactBlocks: 27,
+        needsEnclosure: true,
+        needsOpening: true,
+      },
+    },
+    maxPoints: 250,
+    timeBonus: false,
+  },
+  {
+    taskId: "collect_variety_10",
+    name: "Block Collector",
+    description: "Collect at least 1 of 10 different block types.",
+    category: "mining" as const,
+    difficulty: "medium" as const,
+    requirements: {
+      type: "custom" as const,
+      params: {
+        customType: "collect_variety",
+        uniqueTypes: 10,
+      },
+    },
+    maxPoints: 175,
+    timeBonus: true,
+  },
+  {
+    taskId: "chat_10",
+    name: "Socializer",
+    description: "Send 10 chat messages to other agents.",
+    category: "exploration" as const,
+    difficulty: "easy" as const,
+    requirements: {
+      type: "custom" as const,
+      params: {
+        customType: "chat_messages",
+        count: 10,
+      },
+    },
+    maxPoints: 50,
+    timeBonus: false,
+  },
+  {
+    taskId: "build_glass_dome",
+    name: "Dome Builder",
+    description: "Build a glass dome at least 7 blocks in diameter.",
+    category: "building" as const,
+    difficulty: "hard" as const,
+    requirements: {
+      type: "build_structure" as const,
+      params: {
+        shape: "dome",
+        minDiameter: 7,
+        allowedBlocks: [12], // Glass
+      },
+    },
+    maxPoints: 400,
+    timeBonus: true,
+  },
+  {
+    taskId: "waypoint_5",
+    name: "Navigator",
+    description: "Create 5 waypoints in different locations (at least 50 blocks apart).",
+    category: "exploration" as const,
+    difficulty: "easy" as const,
+    requirements: {
+      type: "custom" as const,
+      params: {
+        customType: "create_waypoints",
+        count: 5,
+        minDistance: 50,
+      },
+    },
+    maxPoints: 75,
+    timeBonus: false,
+  },
+  {
+    taskId: "survival_craft_chain",
+    name: "Survival Chain",
+    description: "Complete the survival chain: collect wood → craft planks → craft wooden pickaxe → mine stone → craft stone pickaxe.",
+    category: "mining" as const,
+    difficulty: "medium" as const,
+    requirements: {
+      type: "custom" as const,
+      params: {
+        customType: "craft_chain",
+        chain: ["collect_wood", "craft_planks", "craft_wooden_pickaxe", "collect_stone", "craft_stone_pickaxe"],
+      },
+    },
+    maxPoints: 200,
     timeBonus: true,
   },
 ];
