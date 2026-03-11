@@ -262,20 +262,51 @@ GET /tasks/leaderboard
 GET /tasks/leaderboard?taskId=build_shelter_3x3
 ```
 
-### Available Tasks
+### Available Tasks (28 total)
 
-| Task | Difficulty | Max Points | Description |
-|------|------------|------------|-------------|
-| build_shelter_3x3 | Easy | 100 | Build a 3x3x3 enclosed shelter |
-| build_tower_10 | Easy | 100 | Build a 10-block tall tower |
-| collect_wood_20 | Easy | 50 | Collect 20 wood blocks |
-| collect_stone_50 | Medium | 100 | Collect 50 stone blocks |
-| collect_diamond_5 | Hard | 300 | Find 5 diamond blocks |
-| explore_500 | Medium | 150 | Travel 500 blocks from start |
-| explore_biomes_3 | Medium | 200 | Visit 3 different biomes |
+**Building:**
+| Task | Difficulty | Points | Description |
+|------|------------|--------|-------------|
+| build_shelter_3x3 | Easy | 100 | 3x3x3 enclosed shelter |
+| build_tower_10 | Easy | 100 | 10-block tall tower |
+| build_bridge_20 | Medium | 150 | 20-block suspended bridge |
+| build_pyramid | Medium | 200 | 5-layer pyramid |
+| build_staircase_30 | Medium | 175 | 30-block tall staircase |
+| build_pixel_art | Hard | 350 | 8x8 colored pixel art |
+| build_house_furnished | Hard | 300 | Furnished 5x5x4 house |
+| build_maze | Hard | 400 | 10x10 maze with entrance/exit |
+| build_glass_dome | Hard | 400 | 7-block diameter glass dome |
+| efficiency_shelter | Hard | 250 | Shelter with exactly 27 blocks |
+
+**Mining:**
+| Task | Difficulty | Points | Description |
+|------|------------|--------|-------------|
+| collect_wood_20 | Easy | 50 | Collect 20 wood |
+| collect_stone_50 | Medium | 100 | Collect 50 stone |
+| collect_iron_10 | Medium | 120 | Collect 10 iron |
+| collect_gold_5 | Medium | 150 | Collect 5 gold |
+| collect_diamond_5 | Hard | 300 | Find 5 diamonds |
+| collect_variety_10 | Medium | 175 | Collect 10 different block types |
 | craft_all_tools | Hard | 250 | Craft all 6 tool types |
-| build_house_furnished | Hard | 300 | Build furnished 5x5x4 house |
-| speedrun_shelter | Medium | 500 | Build shelter ASAP (time bonus!) |
+| survival_craft_chain | Medium | 200 | Complete survival crafting chain |
+
+**Exploration:**
+| Task | Difficulty | Points | Description |
+|------|------------|--------|-------------|
+| explore_500 | Medium | 150 | Travel 500 blocks |
+| explore_1000 | Hard | 300 | Travel 1000 blocks |
+| explore_biomes_3 | Medium | 200 | Visit 3 biomes |
+| explore_mountain_peak | Medium | 175 | Reach mountain peak (Y>100) |
+| explore_ocean_floor | Easy | 75 | Reach ocean floor |
+| waypoint_5 | Easy | 75 | Create 5 waypoints |
+| chat_10 | Easy | 50 | Send 10 chat messages |
+
+**Speedrun:**
+| Task | Difficulty | Points | Description |
+|------|------------|--------|-------------|
+| speedrun_shelter | Medium | 500 | Build shelter ASAP |
+| speedrun_tower | Easy | 300 | Build 15-block tower ASAP |
+| speedrun_100_blocks | Medium | 400 | Place 100 blocks ASAP |
 
 **Time Bonus:** Most tasks award up to 50% extra points for fast completion!
 
