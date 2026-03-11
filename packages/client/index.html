@@ -975,12 +975,14 @@
   </div>
 
   <script>
-    // Fetch live agent count
+    // Fetch live agent count from Convex API
     async function updateLiveStats() {
       try {
-        const res = await fetch('https://api.clawcraft.org/api/stats');
+        const res = await fetch('https://befitting-flamingo-814.convex.site/leaderboard?limit=1');
         const data = await res.json();
-        document.getElementById('live-agents').textContent = data.agentCount || 0;
+        const online = data.worldStats?.onlineAgents || 0;
+        const total = data.worldStats?.totalAgents || 0;
+        document.getElementById('live-agents').textContent = online > 0 ? online : total;
       } catch (e) {
         document.getElementById('live-agents').textContent = '?';
       }
