@@ -2479,6 +2479,9 @@ http.route({
           // Place blocks in each chunk (skip occupied positions, refund to inventory)
           let placedCount = 0;
           let skippedCount = 0;
+          // Track actually placed blocks for ownership recording
+          const actuallyPlaced: Array<{x: number, y: number, z: number, blockType: number}> = [];
+          
           for (const [key, blocksInChunk] of chunkBlocks) {
             const chunk = chunks[key];
             if (!chunk) continue;
@@ -2497,6 +2500,8 @@ http.route({
               }
               setBlockAt(blocks, b.localX, b.localY, b.localZ, b.blockType);
               placedCount++;
+              // Track this block for ownership recording
+              actuallyPlaced.push({ x: b.x, y: b.y, z: b.z, blockType: b.blockType });
             }
 
             const [cx, cy, cz] = key.split(",").map(Number);
@@ -2524,24 +2529,14 @@ http.route({
             });
           }
 
-          // Record block ownership for placed blocks
-          for (const [_key, blocksInChunk] of chunkBlocks) {
-            for (const b of blocksInChunk) {
-              // Only record if it was actually placed (not skipped)
-              const chunk = chunks[_key];
-              if (chunk) {
-                const chunkBlocks2 = decodeBlocks(chunk.blocksBase64);
-                const placedBlock = getBlockAt(chunkBlocks2, b.localX, b.localY, b.localZ);
-                if (placedBlock === b.blockType) {
-                  await ctx.runMutation(api.blocks.recordPlacement, {
-                    x: b.x, y: b.y, z: b.z,
-                    blockType: b.blockType,
-                    agentId: agent._id,
-                    agentName: agent.username,
-                  });
-                }
-              }
-            }
+          // Record block ownership for actually placed blocks
+          for (const placed of actuallyPlaced) {
+            await ctx.runMutation(api.blocks.recordPlacement, {
+              x: placed.x, y: placed.y, z: placed.z,
+              blockType: placed.blockType,
+              agentId: agent._id,
+              agentName: agent.username,
+            });
           }
 
           return jsonResponse({
