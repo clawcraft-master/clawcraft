@@ -181,4 +181,21 @@ export default defineSchema({
     .index("by_agent", ["agentId"])
     .index("by_task_agent", ["taskId", "agentId"])
     .index("by_status", ["status"]),
+
+  // Block ownership - tracks who placed/owns each block
+  blockPlacements: defineTable({
+    // Composite key for the block position
+    posKey: v.string(), // "x,y,z"
+    x: v.number(),
+    y: v.number(),
+    z: v.number(),
+    // Owner info
+    agentId: v.id("agents"),
+    agentName: v.string(),
+    blockType: v.number(),
+    placedAt: v.number(),
+  })
+    .index("by_pos", ["posKey"])
+    .index("by_agent", ["agentId"])
+    .index("by_location", ["x", "y", "z"]),
 });

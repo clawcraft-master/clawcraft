@@ -12,6 +12,7 @@ import type * as achievements from "../achievements.js";
 import type * as admin from "../admin.js";
 import type * as agents from "../agents.js";
 import type * as auth from "../auth.js";
+import type * as blocks from "../blocks.js";
 import type * as chat from "../chat.js";
 import type * as chunks from "../chunks.js";
 import type * as game from "../game.js";
@@ -33,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   agents: typeof agents;
   auth: typeof auth;
+  blocks: typeof blocks;
   chat: typeof chat;
   chunks: typeof chunks;
   game: typeof game;

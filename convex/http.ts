@@ -397,7 +397,7 @@ function removeFromInventory(inventory: InventorySlot[], blockId: number, count:
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/agent/inventory", "/agent/tools", "/agent/equip", "/agent/craft", "/agent/craft-block", "/agent/waypoints", "/agent/achievements", "/agent/tasks", "/agent/task/start", "/agent/task/submit", "/agent/task/abandon", "/tasks", "/tasks/leaderboard", "/leaderboard", "/profile", "/templates", "/template", "/admin/stats", "/admin/reset", "/admin/pregenerate", "/admin/clear-chunks", "/admin/reset-inventories", "/admin/seed-tasks"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agents", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/stats", "/agent/ping", "/agent/nearby", "/agent/map", "/agent/inventory", "/agent/tools", "/agent/equip", "/agent/craft", "/agent/craft-block", "/agent/waypoints", "/agent/achievements", "/agent/tasks", "/agent/task/start", "/agent/task/submit", "/agent/task/abandon", "/tasks", "/tasks/leaderboard", "/leaderboard", "/profile", "/templates", "/template", "/blocks/owner", "/admin/stats", "/admin/reset", "/admin/pregenerate", "/admin/clear-chunks", "/admin/reset-inventories", "/admin/seed-tasks"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -1199,6 +1199,220 @@ http.route({
         unlocked: unlocked.length,
         total: Object.keys(ACHIEVEMENTS).length,
         progress: `${unlocked.length}/${Object.keys(ACHIEVEMENTS).length}`,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /agent/stats - Get your stats
+ * Header: Authorization: Bearer <token>
+ */
+http.route({
+  path: "/agent/stats",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      // Update last seen
+      await ctx.runMutation(api.agents.updateLastSeen, { id: agent._id });
+
+      // Get agent's rank
+      const allAgents = await ctx.runQuery(api.agents.list, {});
+      const sortedByBlocks = allAgents
+        .sort((a, b) => ((b.stats?.blocksPlaced || 0) - (a.stats?.blocksPlaced || 0)));
+      const rank = sortedByBlocks.findIndex(a => a._id === agent._id) + 1;
+
+      const stats = agent.stats || { blocksPlaced: 0, blocksBroken: 0, messagesSent: 0 };
+
+      return jsonResponse({
+        username: agent.username,
+        stats,
+        rank,
+        totalAgents: allAgents.length,
+        registeredAt: agent.verifiedAt,
+        lastSeen: agent.lastSeen,
+        isOnline: true,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * POST /agent/ping - Heartbeat to stay online
+ * Header: Authorization: Bearer <token>
+ * Call this every 10-20 seconds to remain visible in online agents list
+ */
+http.route({
+  path: "/agent/ping",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      // Update last seen timestamp
+      await ctx.runMutation(api.agents.updateLastSeen, { id: agent._id });
+
+      // Get current online count
+      const onlineAgents = await ctx.runQuery(api.game.getOnlineAgents, {});
+
+      return jsonResponse({
+        success: true,
+        timestamp: Date.now(),
+        onlineAgents: onlineAgents.length,
+        message: "Ping received. You are online.",
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /agents - List all registered agents (public)
+ * Query: ?online=true (filter to online only), ?limit=50
+ */
+http.route({
+  path: "/agents",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const url = new URL(request.url);
+      const onlineOnly = url.searchParams.get("online") === "true";
+      const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 200);
+
+      const agents = await ctx.runQuery(api.agents.list, {});
+      const onlineThreshold = Date.now() - 30000;
+
+      let result = agents.map(a => ({
+        id: a._id,
+        username: a.username,
+        about: a.about,
+        stats: a.stats || { blocksPlaced: 0, blocksBroken: 0, messagesSent: 0 },
+        position: a.position,
+        isOnline: a.lastSeen && a.lastSeen > onlineThreshold,
+        lastSeen: a.lastSeen,
+        registeredAt: a.verifiedAt,
+      }));
+
+      if (onlineOnly) {
+        result = result.filter(a => a.isOnline);
+      }
+
+      // Sort by blocksPlaced descending
+      result.sort((a, b) => (b.stats.blocksPlaced || 0) - (a.stats.blocksPlaced || 0));
+
+      return jsonResponse({
+        agents: result.slice(0, limit),
+        total: result.length,
+        online: result.filter(a => a.isOnline).length,
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /blocks/owner - Get block ownership info
+ * Query: ?x=&y=&z= (single block) or ?x1=&y1=&z1=&x2=&y2=&z2= (region, max 1000 blocks)
+ */
+http.route({
+  path: "/blocks/owner",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const url = new URL(request.url);
+      
+      // Single block query
+      const x = url.searchParams.get("x");
+      const y = url.searchParams.get("y");
+      const z = url.searchParams.get("z");
+
+      if (x !== null && y !== null && z !== null) {
+        const posKey = `${parseInt(x)},${parseInt(y)},${parseInt(z)}`;
+        const placement = await ctx.runQuery(api.blocks.getOwner, { posKey });
+        
+        if (!placement) {
+          return jsonResponse({ 
+            x: parseInt(x), 
+            y: parseInt(y), 
+            z: parseInt(z), 
+            owner: null,
+            message: "Block has no recorded owner (terrain or unknown)" 
+          });
+        }
+
+        return jsonResponse({
+          x: placement.x,
+          y: placement.y,
+          z: placement.z,
+          owner: {
+            agentId: placement.agentId,
+            agentName: placement.agentName,
+            placedAt: placement.placedAt,
+          },
+          blockType: placement.blockType,
+        });
+      }
+
+      // Region query
+      const x1 = parseInt(url.searchParams.get("x1") || "0");
+      const y1 = parseInt(url.searchParams.get("y1") || "0");
+      const z1 = parseInt(url.searchParams.get("z1") || "0");
+      const x2 = parseInt(url.searchParams.get("x2") || "0");
+      const y2 = parseInt(url.searchParams.get("y2") || "0");
+      const z2 = parseInt(url.searchParams.get("z2") || "0");
+
+      // Limit region size
+      const volume = Math.abs(x2 - x1 + 1) * Math.abs(y2 - y1 + 1) * Math.abs(z2 - z1 + 1);
+      if (volume > 1000) {
+        return jsonResponse({ error: "Region too large. Max 1000 blocks." }, 400);
+      }
+
+      const placements = await ctx.runQuery(api.blocks.getOwnersInRegion, { x1, y1, z1, x2, y2, z2 });
+
+      // Aggregate by agent
+      const byAgent: Record<string, { agentName: string; count: number; blocks: Array<{x: number, y: number, z: number, blockType: number}> }> = {};
+      for (const p of placements) {
+        const key = p.agentId;
+        if (!byAgent[key]) {
+          byAgent[key] = { agentName: p.agentName, count: 0, blocks: [] };
+        }
+        byAgent[key].count++;
+        byAgent[key].blocks.push({ x: p.x, y: p.y, z: p.z, blockType: p.blockType });
+      }
+
+      return jsonResponse({
+        region: { x1, y1, z1, x2, y2, z2 },
+        totalBlocks: placements.length,
+        owners: Object.entries(byAgent).map(([agentId, data]) => ({
+          agentId,
+          agentName: data.agentName,
+          blockCount: data.count,
+          blocks: data.blocks,
+        })),
       });
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);
@@ -2053,6 +2267,14 @@ http.route({
             stat: "blocksPlaced",
           });
 
+          // Record block ownership
+          await ctx.runMutation(api.blocks.recordPlacement, {
+            x, y, z,
+            blockType,
+            agentId: agent._id,
+            agentName: agent.username,
+          });
+
           // Check for new achievements
           const placeAchievements = await ctx.runMutation(api.achievements.checkAndAward, { agentId: agent._id });
 
@@ -2124,6 +2346,9 @@ http.route({
             id: agent._id,
             stat: "blocksBroken",
           });
+
+          // Remove block ownership record
+          await ctx.runMutation(api.blocks.removePlacement, { x, y, z });
 
           // Check for new achievements
           const breakAchievements = await ctx.runMutation(api.achievements.checkAndAward, { agentId: agent._id });
@@ -2299,6 +2524,26 @@ http.route({
             });
           }
 
+          // Record block ownership for placed blocks
+          for (const [_key, blocksInChunk] of chunkBlocks) {
+            for (const b of blocksInChunk) {
+              // Only record if it was actually placed (not skipped)
+              const chunk = chunks[_key];
+              if (chunk) {
+                const chunkBlocks2 = decodeBlocks(chunk.blocksBase64);
+                const placedBlock = getBlockAt(chunkBlocks2, b.localX, b.localY, b.localZ);
+                if (placedBlock === b.blockType) {
+                  await ctx.runMutation(api.blocks.recordPlacement, {
+                    x: b.x, y: b.y, z: b.z,
+                    blockType: b.blockType,
+                    agentId: agent._id,
+                    agentName: agent.username,
+                  });
+                }
+              }
+            }
+          }
+
           return jsonResponse({
             success: true,
             placed: placedCount,
@@ -2402,6 +2647,11 @@ http.route({
               stat: "blocksBroken",
               amount: brokenCount,
             });
+          }
+
+          // Remove block ownership records for broken blocks
+          for (const p of positions) {
+            await ctx.runMutation(api.blocks.removePlacement, { x: p.x, y: p.y, z: p.z });
           }
 
           // Summarize collected blocks
