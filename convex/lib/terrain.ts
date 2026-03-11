@@ -355,6 +355,20 @@ function addBiomeFeatures(
       const terrainHeight = getHeightAtWithBiome(noise, worldX, worldZ, biome, cfg);
       
       if (terrainHeight <= cfg.seaLevel) continue; // Don't add features underwater
+      
+      // Check for water nearby (prevent trees on edges that would float)
+      let nearWater = false;
+      for (let dx = -2; dx <= 2; dx++) {
+        for (let dz = -2; dz <= 2; dz++) {
+          const nearbyHeight = getHeightAtWithBiome(noise, worldX + dx, worldZ + dz, biome, cfg);
+          if (nearbyHeight < cfg.seaLevel) {
+            nearWater = true;
+            break;
+          }
+        }
+        if (nearWater) break;
+      }
+      if (nearWater) continue; // Don't place trees near water edges
 
       const featureBaseY = terrainHeight + 1 - worldBaseY;
       if (featureBaseY < 0 || featureBaseY >= CHUNK_SIZE - 5) continue;

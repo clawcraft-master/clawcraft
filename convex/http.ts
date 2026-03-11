@@ -2826,6 +2826,54 @@ http.route({
         blocks: 85,
         preview: "🔺",
       },
+      {
+        id: "castle_tower",
+        name: "Castle Tower",
+        description: "A medieval castle tower with battlements, windows, and flag",
+        size: { width: 7, height: 15, depth: 7 },
+        blocks: 280,
+        preview: "🏰",
+      },
+      {
+        id: "lighthouse",
+        name: "Lighthouse",
+        description: "A tall lighthouse with spiral pattern and lamp room at top",
+        size: { width: 7, height: 18, depth: 7 },
+        blocks: 320,
+        preview: "🏠",
+      },
+      {
+        id: "windmill",
+        name: "Windmill",
+        description: "A Dutch-style windmill with rotating blades design",
+        size: { width: 9, height: 14, depth: 9 },
+        blocks: 250,
+        preview: "🌬️",
+      },
+      {
+        id: "modern_house",
+        name: "Modern House",
+        description: "A sleek modern house with glass walls and flat roof",
+        size: { width: 11, height: 6, depth: 9 },
+        blocks: 300,
+        preview: "🏢",
+      },
+      {
+        id: "ship",
+        name: "Viking Ship",
+        description: "A wooden Viking longship with mast and decorative bow",
+        size: { width: 15, height: 10, depth: 5 },
+        blocks: 200,
+        preview: "⛵",
+      },
+      {
+        id: "statue",
+        name: "Stone Statue",
+        description: "A humanoid stone statue on a pedestal",
+        size: { width: 5, height: 12, depth: 5 },
+        blocks: 150,
+        preview: "🗿",
+      },
     ];
 
     return jsonResponse({ templates });
@@ -3001,6 +3049,164 @@ http.route({
             y++;
             offset++;
             size -= 2;
+          }
+          return b;
+        })(),
+      },
+      castle_tower: {
+        blocks: (() => {
+          const b: Array<{ x: number; y: number; z: number; blockType: number }> = [];
+          // Base and walls (stone)
+          for (let y = 0; y < 12; y++) {
+            for (let x = 0; x < 7; x++) {
+              for (let z = 0; z < 7; z++) {
+                // Outer walls only
+                if (x === 0 || x === 6 || z === 0 || z === 6) {
+                  // Windows at levels 3-4, 7-8
+                  const isWindow = (y === 3 || y === 4 || y === 7 || y === 8) && 
+                                   (x === 3 || z === 3) && !(x === 0 || x === 6 || z === 0 || z === 6);
+                  if (!isWindow) {
+                    b.push({ x, y, z, blockType: 14 }); // Cobblestone
+                  }
+                }
+              }
+            }
+          }
+          // Floor
+          for (let x = 1; x < 6; x++) {
+            for (let z = 1; z < 6; z++) {
+              b.push({ x, y: 0, z, blockType: 1 }); // Stone
+            }
+          }
+          // Battlements (top)
+          for (let x = 0; x < 7; x++) {
+            for (let z = 0; z < 7; z++) {
+              if (x === 0 || x === 6 || z === 0 || z === 6) {
+                // Alternating pattern
+                if ((x + z) % 2 === 0) {
+                  b.push({ x, y: 12, z, blockType: 14 });
+                  b.push({ x, y: 13, z, blockType: 14 });
+                }
+              }
+            }
+          }
+          // Corner pillars taller
+          for (let y = 12; y < 15; y++) {
+            b.push({ x: 0, y, z: 0, blockType: 14 });
+            b.push({ x: 6, y, z: 0, blockType: 14 });
+            b.push({ x: 0, y, z: 6, blockType: 14 });
+            b.push({ x: 6, y, z: 6, blockType: 14 });
+          }
+          // Door opening
+          b.push({ x: 3, y: 1, z: 0, blockType: 0 }); // Air
+          b.push({ x: 3, y: 2, z: 0, blockType: 0 }); // Air
+          return b;
+        })(),
+      },
+      lighthouse: {
+        blocks: (() => {
+          const b: Array<{ x: number; y: number; z: number; blockType: number }> = [];
+          // Circular base (approximated)
+          for (let y = 0; y < 15; y++) {
+            const radius = y < 3 ? 3 : (y < 10 ? 2 : 1);
+            for (let x = -3; x <= 3; x++) {
+              for (let z = -3; z <= 3; z++) {
+                const dist = Math.sqrt(x * x + z * z);
+                if (dist <= radius) {
+                  // Spiral stripe pattern (red and white)
+                  const stripe = ((y + Math.floor(Math.atan2(z, x) / Math.PI * 4 + 8)) % 2 === 0);
+                  b.push({ x: x + 3, y, z: z + 3, blockType: stripe ? 17 : 16 }); // Red/White wool
+                }
+              }
+            }
+          }
+          // Lamp room (glass)
+          for (let y = 15; y < 17; y++) {
+            for (let x = 1; x <= 5; x++) {
+              for (let z = 1; z <= 5; z++) {
+                if (x === 1 || x === 5 || z === 1 || z === 5) {
+                  b.push({ x, y, z, blockType: 12 }); // Glass
+                }
+              }
+            }
+          }
+          // Light (lamp block)
+          b.push({ x: 3, y: 15, z: 3, blockType: 29 }); // Lamp
+          b.push({ x: 3, y: 16, z: 3, blockType: 29 });
+          // Roof
+          for (let x = 1; x <= 5; x++) {
+            for (let z = 1; z <= 5; z++) {
+              b.push({ x, y: 17, z, blockType: 14 }); // Cobblestone
+            }
+          }
+          return b;
+        })(),
+      },
+      ship: {
+        blocks: (() => {
+          const b: Array<{ x: number; y: number; z: number; blockType: number }> = [];
+          // Hull
+          for (let x = 0; x < 15; x++) {
+            const width = x < 3 ? x + 1 : (x > 11 ? 15 - x : 4);
+            for (let z = 0; z < width; z++) {
+              const zOffset = Math.floor((4 - width) / 2);
+              b.push({ x, y: 0, z: zOffset + z, blockType: 4 }); // Wood
+              if (x > 2 && x < 12) {
+                b.push({ x, y: 1, z: zOffset, blockType: 4 });
+                b.push({ x, y: 1, z: zOffset + width - 1, blockType: 4 });
+              }
+            }
+          }
+          // Deck
+          for (let x = 3; x < 12; x++) {
+            for (let z = 1; z < 3; z++) {
+              b.push({ x, y: 2, z, blockType: 15 }); // Planks
+            }
+          }
+          // Mast
+          for (let y = 2; y < 10; y++) {
+            b.push({ x: 7, y, z: 2, blockType: 4 });
+          }
+          // Sail (white wool)
+          for (let y = 4; y < 9; y++) {
+            for (let x = 5; x < 10; x++) {
+              b.push({ x, y, z: 3, blockType: 16 }); // White wool
+            }
+          }
+          return b;
+        })(),
+      },
+      statue: {
+        blocks: (() => {
+          const b: Array<{ x: number; y: number; z: number; blockType: number }> = [];
+          // Pedestal
+          for (let x = 1; x < 4; x++) {
+            for (let z = 1; z < 4; z++) {
+              b.push({ x, y: 0, z, blockType: 1 });
+              b.push({ x, y: 1, z, blockType: 1 });
+            }
+          }
+          // Legs
+          b.push({ x: 1, y: 2, z: 2, blockType: 1 });
+          b.push({ x: 1, y: 3, z: 2, blockType: 1 });
+          b.push({ x: 3, y: 2, z: 2, blockType: 1 });
+          b.push({ x: 3, y: 3, z: 2, blockType: 1 });
+          // Body
+          for (let y = 4; y < 8; y++) {
+            b.push({ x: 2, y, z: 2, blockType: 1 });
+          }
+          // Arms
+          b.push({ x: 0, y: 6, z: 2, blockType: 1 });
+          b.push({ x: 1, y: 6, z: 2, blockType: 1 });
+          b.push({ x: 3, y: 6, z: 2, blockType: 1 });
+          b.push({ x: 4, y: 6, z: 2, blockType: 1 });
+          // Head
+          for (let x = 1; x < 4; x++) {
+            for (let z = 1; z < 4; z++) {
+              for (let y = 8; y < 11; y++) {
+                b.push({ x, y, z, blockType: 1 });
+              }
+            }
           }
           return b;
         })(),
