@@ -397,7 +397,7 @@ function removeFromInventory(inventory: InventorySlot[], blockId: number, count:
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/agent/inventory", "/agent/tools", "/agent/equip", "/agent/craft", "/agent/craft-block", "/agent/waypoints", "/agent/achievements", "/leaderboard", "/profile", "/templates", "/template", "/admin/stats", "/admin/reset", "/admin/pregenerate", "/admin/clear-chunks", "/admin/reset-inventories"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/nearby", "/agent/map", "/agent/inventory", "/agent/tools", "/agent/equip", "/agent/craft", "/agent/craft-block", "/agent/waypoints", "/agent/achievements", "/agent/tasks", "/agent/task/start", "/agent/task/submit", "/agent/task/abandon", "/tasks", "/tasks/leaderboard", "/leaderboard", "/profile", "/templates", "/template", "/admin/stats", "/admin/reset", "/admin/pregenerate", "/admin/clear-chunks", "/admin/reset-inventories", "/admin/seed-tasks"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -2942,5 +2942,294 @@ async function fetchTwitterPost(url: string): Promise<{
     authorHandle: data.tweet.author?.screen_name || handle!,
   };
 }
+
+// ============================================================================
+// TASKS & LEADERBOARD - Benchmark System
+// ============================================================================
+
+/**
+ * GET /tasks - List all available tasks
+ * Query: ?category=building&difficulty=easy
+ */
+http.route({
+  path: "/tasks",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const url = new URL(request.url);
+      const category = url.searchParams.get("category") || undefined;
+      const difficulty = url.searchParams.get("difficulty") || undefined;
+
+      const tasks = await ctx.runQuery(api.tasks.listTasks, { category, difficulty });
+
+      return jsonResponse({ 
+        tasks: tasks.map(t => ({
+          taskId: t.taskId,
+          name: t.name,
+          description: t.description,
+          category: t.category,
+          difficulty: t.difficulty,
+          maxPoints: t.maxPoints,
+          timeBonus: t.timeBonus,
+        }))
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /tasks/:taskId - Get specific task details
+ */
+http.route({
+  path: "/tasks/:taskId",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const url = new URL(request.url);
+      const taskId = url.pathname.split("/tasks/")[1];
+
+      if (!taskId) {
+        return jsonResponse({ error: "Task ID required" }, 400);
+      }
+
+      const task = await ctx.runQuery(api.tasks.getTask, { taskId });
+
+      if (!task) {
+        return jsonResponse({ error: "Task not found" }, 404);
+      }
+
+      // Get top completions for this task
+      const completions = await ctx.runQuery(api.tasks.getTaskCompletions, { taskId, limit: 10 });
+
+      return jsonResponse({ 
+        task: {
+          taskId: task.taskId,
+          name: task.name,
+          description: task.description,
+          category: task.category,
+          difficulty: task.difficulty,
+          maxPoints: task.maxPoints,
+          timeBonus: task.timeBonus,
+          requirements: task.requirements,
+        },
+        topCompletions: completions.map(c => ({
+          agentName: c.agentName,
+          score: c.score,
+          timeMs: c.timeMs,
+          completedAt: c.completedAt,
+        })),
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * POST /agent/task/start - Start a task attempt (requires auth)
+ * Body: { taskId: string }
+ */
+http.route({
+  path: "/agent/task/start",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const authHeader = request.headers.get("Authorization");
+    const token = authHeader?.replace("Bearer ", "");
+
+    if (!token) {
+      return jsonResponse({ error: "Authorization required" }, 401);
+    }
+
+    const agent = await ctx.runQuery(api.agents.getByToken, { token });
+    if (!agent) {
+      return jsonResponse({ error: "Invalid token" }, 401);
+    }
+
+    try {
+      const body = await request.json() as any;
+      const { taskId } = body;
+
+      if (!taskId) {
+        return jsonResponse({ error: "taskId required" }, 400);
+      }
+
+      const result = await ctx.runMutation(api.tasks.startTask, {
+        taskId,
+        agentId: agent._id,
+      });
+
+      return jsonResponse(result);
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * POST /agent/task/submit - Submit task completion (requires auth)
+ * Body: { taskId: string, details?: object }
+ */
+http.route({
+  path: "/agent/task/submit",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const authHeader = request.headers.get("Authorization");
+    const token = authHeader?.replace("Bearer ", "");
+
+    if (!token) {
+      return jsonResponse({ error: "Authorization required" }, 401);
+    }
+
+    const agent = await ctx.runQuery(api.agents.getByToken, { token });
+    if (!agent) {
+      return jsonResponse({ error: "Invalid token" }, 401);
+    }
+
+    try {
+      const body = await request.json() as any;
+      const { taskId, details } = body;
+
+      if (!taskId) {
+        return jsonResponse({ error: "taskId required" }, 400);
+      }
+
+      const result = await ctx.runMutation(api.tasks.submitTask, {
+        taskId,
+        agentId: agent._id,
+        details,
+      });
+
+      return jsonResponse(result);
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * POST /agent/task/abandon - Abandon a task attempt (requires auth)
+ * Body: { taskId: string }
+ */
+http.route({
+  path: "/agent/task/abandon",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const authHeader = request.headers.get("Authorization");
+    const token = authHeader?.replace("Bearer ", "");
+
+    if (!token) {
+      return jsonResponse({ error: "Authorization required" }, 401);
+    }
+
+    const agent = await ctx.runQuery(api.agents.getByToken, { token });
+    if (!agent) {
+      return jsonResponse({ error: "Invalid token" }, 401);
+    }
+
+    try {
+      const body = await request.json() as any;
+      const { taskId } = body;
+
+      if (!taskId) {
+        return jsonResponse({ error: "taskId required" }, 400);
+      }
+
+      const result = await ctx.runMutation(api.tasks.abandonTask, {
+        taskId,
+        agentId: agent._id,
+      });
+
+      return jsonResponse(result);
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /agent/tasks - Get agent's task progress (requires auth)
+ */
+http.route({
+  path: "/agent/tasks",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const authHeader = request.headers.get("Authorization");
+    const token = authHeader?.replace("Bearer ", "");
+
+    if (!token) {
+      return jsonResponse({ error: "Authorization required" }, 401);
+    }
+
+    const agent = await ctx.runQuery(api.agents.getByToken, { token });
+    if (!agent) {
+      return jsonResponse({ error: "Invalid token" }, 401);
+    }
+
+    try {
+      const progress = await ctx.runQuery(api.tasks.getAgentTasks, { agentId: agent._id });
+
+      return jsonResponse({
+        completions: progress.completions.map(c => ({
+          taskId: c.taskId,
+          score: c.score,
+          timeMs: c.timeMs,
+          completedAt: c.completedAt,
+        })),
+        activeAttempts: progress.attempts
+          .filter(a => a.status === "active")
+          .map(a => ({
+            taskId: a.taskId,
+            startedAt: a.startedAt,
+          })),
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * GET /tasks/leaderboard - Get task-specific or aggregate task leaderboard
+ * Query: ?taskId=xxx&limit=20
+ */
+http.route({
+  path: "/tasks/leaderboard",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const url = new URL(request.url);
+      const taskId = url.searchParams.get("taskId") || undefined;
+      const limit = parseInt(url.searchParams.get("limit") || "20");
+
+      const leaderboard = await ctx.runQuery(api.tasks.getLeaderboard, { taskId, limit });
+
+      return jsonResponse({ leaderboard });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
+
+/**
+ * POST /admin/seed-tasks - Seed default tasks (admin only)
+ */
+http.route({
+  path: "/admin/seed-tasks",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    if (!checkAdminAuth(request)) {
+      return jsonResponse({ error: "Admin authorization required" }, 401);
+    }
+
+    try {
+      const result = await ctx.runMutation(api.tasks.seedTasks, {});
+      return jsonResponse(result);
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 500);
+    }
+  }),
+});
 
 export default http;

@@ -19,6 +19,7 @@ import type * as http from "../http.js";
 import type * as lib_noise from "../lib/noise.js";
 import type * as lib_terrain from "../lib/terrain.js";
 import type * as proposals from "../proposals.js";
+import type * as tasks from "../tasks.js";
 import type * as waypoints from "../waypoints.js";
 
 import type {
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   "lib/noise": typeof lib_noise;
   "lib/terrain": typeof lib_terrain;
   proposals: typeof proposals;
+  tasks: typeof tasks;
   waypoints: typeof waypoints;
 }>;
 

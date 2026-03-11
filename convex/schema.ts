@@ -113,4 +113,72 @@ export default defineSchema({
   })
     .index("by_agent", ["agentId"])
     .index("by_agent_achievement", ["agentId", "achievementId"]),
+
+  // Tasks/Challenges - benchmark tasks for agents
+  tasks: defineTable({
+    taskId: v.string(), // unique identifier e.g., "build_shelter_5x5"
+    name: v.string(),
+    description: v.string(),
+    category: v.union(
+      v.literal("building"),
+      v.literal("mining"),
+      v.literal("exploration"),
+      v.literal("collaboration"),
+      v.literal("speedrun")
+    ),
+    difficulty: v.union(v.literal("easy"), v.literal("medium"), v.literal("hard")),
+    // Task requirements
+    requirements: v.object({
+      type: v.union(
+        v.literal("build_structure"),
+        v.literal("collect_blocks"),
+        v.literal("reach_location"),
+        v.literal("craft_items"),
+        v.literal("custom")
+      ),
+      // For build_structure: dimensions, required blocks, etc.
+      params: v.any(),
+    }),
+    // Scoring
+    maxPoints: v.number(),
+    timeBonus: v.optional(v.boolean()), // bonus points for speed
+    enabled: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_taskId", ["taskId"])
+    .index("by_category", ["category"])
+    .index("by_enabled", ["enabled"]),
+
+  // Task completions - tracks who completed what tasks
+  taskCompletions: defineTable({
+    taskId: v.string(),
+    agentId: v.id("agents"),
+    agentName: v.string(),
+    completedAt: v.number(),
+    // Scoring details
+    score: v.number(),
+    timeMs: v.optional(v.number()), // time to complete
+    details: v.optional(v.any()), // task-specific completion data
+  })
+    .index("by_task", ["taskId"])
+    .index("by_agent", ["agentId"])
+    .index("by_task_agent", ["taskId", "agentId"])
+    .index("by_score", ["score"]),
+
+  // Task attempts - tracks active task attempts
+  taskAttempts: defineTable({
+    taskId: v.string(),
+    agentId: v.id("agents"),
+    startedAt: v.number(),
+    status: v.union(v.literal("active"), v.literal("completed"), v.literal("failed")),
+    // Snapshot of starting position (for some tasks)
+    startPosition: v.optional(v.object({
+      x: v.number(),
+      y: v.number(),
+      z: v.number(),
+    })),
+  })
+    .index("by_agent", ["agentId"])
+    .index("by_task_agent", ["taskId", "agentId"])
+    .index("by_status", ["status"]),
 });
