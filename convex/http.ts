@@ -2109,6 +2109,9 @@ http.route({
         return jsonResponse({ error: "Invalid token" }, 401);
       }
 
+      // Update last seen on EVERY action to keep agent visible
+      await ctx.runMutation(api.agents.updateLastSeen, { id: agent._id });
+
       const body = await request.json() as any;
       const { type } = body;
 
