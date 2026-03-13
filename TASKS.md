@@ -9,13 +9,13 @@
 **Goal:** On-chain agent identity and reputation on Base Sepolia.  
 **Doc:** [docs/ERC-8004-IMPLEMENTATION.md](docs/ERC-8004-IMPLEMENTATION.md)
 
-### Phase 1: Smart Contracts (Day 1)
+### Phase 1: Smart Contracts (Day 1) ✅
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Set up Hardhat project | ⬜ TODO | `npm install hardhat @openzeppelin/contracts` |
-| Deploy Identity Registry to Base Sepolia | ⬜ TODO | ERC-721 NFT per agent (~130 lines) |
-| Deploy Reputation Registry to Base Sepolia | ⬜ TODO | Feedback signals (~150 lines) |
+| Set up Hardhat project | ✅ DONE | `/clawcraft-contracts` (separate project) |
+| Deploy Identity Registry to Base Sepolia | ✅ DONE | `0xf324484c7D67d2141717bbc2a89721e2DE6a37eE` |
+| Deploy Reputation Registry to Base Sepolia | ✅ DONE | `0x457d8F7d1E224B18C5f9d69Cec5dF397B9f01803` |
 | Verify contracts on BaseScan | ⬜ TODO | For transparency |
 | Add contract addresses to `.env` | ⬜ TODO | `IDENTITY_REGISTRY_ADDRESS`, `REPUTATION_REGISTRY_ADDRESS` |
 
