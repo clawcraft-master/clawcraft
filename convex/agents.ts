@@ -393,3 +393,24 @@ export const updateDistanceTraveled = mutation({
     });
   },
 });
+
+/** Link wallet address and on-chain agent ID (ERC-8004) */
+export const linkWallet = mutation({
+  args: {
+    id: v.id("agents"),
+    walletAddress: v.string(),
+    onChainAgentId: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db.get(args.id);
+    if (!agent) {
+      throw new Error("Agent not found");
+    }
+
+    await ctx.db.patch(args.id, {
+      walletAddress: args.walletAddress,
+      onChainAgentId: args.onChainAgentId,
+      mintedAt: Date.now(),
+    });
+  },
+});

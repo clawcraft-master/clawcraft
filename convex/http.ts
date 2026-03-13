@@ -397,7 +397,7 @@ function removeFromInventory(inventory: InventorySlot[], blockId: number, count:
 // OPTIONS handlers for CORS
 // ============================================================================
 
-const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agents", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/stats", "/agent/ping", "/agent/nearby", "/agent/map", "/agent/inventory", "/agent/tools", "/agent/equip", "/agent/craft", "/agent/craft-block", "/agent/waypoints", "/agent/achievements", "/agent/tasks", "/agent/task/start", "/agent/task/submit", "/agent/task/abandon", "/tasks", "/tasks/leaderboard", "/leaderboard", "/profile", "/templates", "/template", "/blocks/owner", "/admin/stats", "/admin/reset", "/admin/pregenerate", "/admin/clear-chunks", "/admin/reset-inventories", "/admin/seed-tasks"];
+const optionsPaths = ["/auth/signup", "/auth/verify", "/agents/register", "/agents/link-wallet", "/agents", "/agent/connect", "/agent/world", "/agent/action", "/agent/blocks", "/agent/chat", "/agent/agents", "/agent/look", "/agent/scan", "/agent/me", "/agent/stats", "/agent/ping", "/agent/nearby", "/agent/map", "/agent/inventory", "/agent/tools", "/agent/equip", "/agent/craft", "/agent/craft-block", "/agent/waypoints", "/agent/achievements", "/agent/tasks", "/agent/task/start", "/agent/task/submit", "/agent/task/abandon", "/tasks", "/tasks/leaderboard", "/leaderboard", "/profile", "/templates", "/template", "/blocks/owner", "/admin/stats", "/admin/reset", "/admin/pregenerate", "/admin/clear-chunks", "/admin/reset-inventories", "/admin/seed-tasks"];
 for (const path of optionsPaths) {
   http.route({
     path,
@@ -495,8 +495,8 @@ http.route({
 
 /**
  * POST /agents/register - Simple direct registration (no social verification)
- * Body: { name: "AgentName", about?: "Description" }
- * Returns: { agentId, token }
+ * Body: { name: "AgentName", about?: "Description", walletAddress?: "0x..." }
+ * Returns: { agentId, token, erc8004 mint instructions }
  */
 http.route({
   path: "/agents/register",
@@ -504,13 +504,42 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     try {
       const body = await request.json();
-      const { name, about } = body as { name?: string; about?: string };
+      const { name, about, walletAddress } = body as { name?: string; about?: string; walletAddress?: string };
 
       if (!name) {
         return jsonResponse({ error: "name required" }, 400);
       }
 
       const result = await ctx.runMutation(api.agents.registerDirect, { name, about });
+
+      // Generate ERC-8004 agent registration file
+      const registrationFile = {
+        type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+        name: name,
+        description: about || `AI agent in ClawCraft voxel world`,
+        image: `https://clawcraft.org/api/avatar/${result.agentId}`,
+        services: [
+          {
+            name: "web",
+            endpoint: `https://clawcraft.org/profile/${name.toLowerCase()}`
+          },
+          {
+            name: "ClawCraft-API",
+            endpoint: "https://clawcraft.org/api",
+            version: "1.0"
+          }
+        ],
+        active: true,
+        registrations: [],
+        supportedTrust: ["reputation"]
+      };
+
+      // Create data: URI for the registration file (for hackathon simplicity)
+      const agentURI = `data:application/json;base64,${btoa(JSON.stringify(registrationFile))}`;
+
+      // Contract addresses from env
+      const identityRegistry = process.env.IDENTITY_REGISTRY_ADDRESS || "0xf324484c7D67d2141717bbc2a89721e2DE6a37eE";
+      const reputationRegistry = process.env.REPUTATION_REGISTRY_ADDRESS || "0x457d8F7d1E224B18C5f9d69Cec5dF397B9f01803";
 
       return jsonResponse({
         success: true,
@@ -522,6 +551,81 @@ http.route({
           step1: "POST /agent/connect with Authorization: Bearer <token>",
           step2: "GET /agent/world to see the world around you",
           step3: "POST /agent/action to move, place blocks, chat",
+        },
+        // ERC-8004 on-chain identity
+        erc8004: {
+          agentURI: agentURI,
+          registrationFile: registrationFile,
+          chain: "Base Sepolia",
+          chainId: 84532,
+          contracts: {
+            identityRegistry,
+            reputationRegistry,
+          },
+          mintInstructions: {
+            contract: identityRegistry,
+            method: "register(string)",
+            args: [agentURI],
+            tip: "Call register(agentURI) with your wallet to mint your agent NFT. After minting, call POST /agents/link-wallet to link your on-chain identity.",
+          },
+        },
+      });
+    } catch (err: any) {
+      return jsonResponse({ error: err.message }, 400);
+    }
+  }),
+});
+
+/**
+ * POST /agents/link-wallet - Link on-chain identity after minting
+ * Header: Authorization: Bearer <token>
+ * Body: { walletAddress: "0x...", onChainAgentId: 1 }
+ */
+http.route({
+  path: "/agents/link-wallet",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const token = getTokenFromHeader(request);
+      if (!token) {
+        return jsonResponse({ error: "Authorization header required" }, 401);
+      }
+
+      const agent = await ctx.runQuery(api.agents.getByToken, { token });
+      if (!agent) {
+        return jsonResponse({ error: "Invalid token" }, 401);
+      }
+
+      const body = await request.json();
+      const { walletAddress, onChainAgentId } = body as { walletAddress?: string; onChainAgentId?: number };
+
+      if (!walletAddress || typeof onChainAgentId !== "number") {
+        return jsonResponse({ error: "walletAddress and onChainAgentId required" }, 400);
+      }
+
+      // Validate wallet address format
+      if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+        return jsonResponse({ error: "Invalid wallet address format" }, 400);
+      }
+
+      // Update agent with on-chain identity
+      await ctx.runMutation(api.agents.linkWallet, {
+        id: agent._id,
+        walletAddress: walletAddress.toLowerCase(),
+        onChainAgentId,
+      });
+
+      const identityRegistry = process.env.IDENTITY_REGISTRY_ADDRESS || "0xf324484c7D67d2141717bbc2a89721e2DE6a37eE";
+
+      return jsonResponse({
+        success: true,
+        message: "On-chain identity linked successfully!",
+        agent: {
+          id: agent._id,
+          username: agent.username,
+          walletAddress: walletAddress.toLowerCase(),
+          onChainAgentId,
+          agentRegistry: `eip155:84532:${identityRegistry}`,
         },
       });
     } catch (err: any) {

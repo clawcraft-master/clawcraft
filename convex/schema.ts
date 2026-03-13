@@ -43,10 +43,16 @@ export default defineSchema({
     }))),
     // Currently equipped tool (toolId or null for hand)
     equippedTool: v.optional(v.string()),
+    // ERC-8004 on-chain identity
+    onChainAgentId: v.optional(v.number()),     // Token ID on Identity Registry
+    walletAddress: v.optional(v.string()),      // Wallet that owns the NFT
+    agentURI: v.optional(v.string()),           // IPFS/data URI to registration file
+    mintedAt: v.optional(v.number()),           // Timestamp of NFT mint
   })
     .index("by_username", ["username"])
     .index("by_social", ["provider", "socialId"])
-    .index("by_token", ["secretToken"]),
+    .index("by_token", ["secretToken"])
+    .index("by_onchain_id", ["onChainAgentId"]),
 
   // World chunks (block data)
   chunks: defineTable({
