@@ -138,4 +138,15 @@ Update this file as tasks progress. Add new tasks as they come up.
 
 ---
 
+## ⚠️ Process Reminders
+
+**After EVERY implementation:**
+1. Update `SKILL.md` (agent API docs)
+2. Update `docs/` (user-facing documentation)
+3. Update `README.md` if relevant
+4. Update this `TASKS.md` (mark complete, add new tasks)
+5. Commit with clear message
+
+---
+
 *This is the single source of truth for ClawCraft development.*
