@@ -23,8 +23,9 @@
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Add `onChainAgentId` to Convex schema | ⬜ TODO | Also `walletAddress`, `agentURI`, `mintedAt` |
-| Modify `/agents/register` to return mint info | ⬜ TODO | Include `agentURI` + mint instructions |
+| Add `onChainAgentId` to Convex schema | ✅ DONE | Added `walletAddress`, `onChainAgentId`, `agentURI`, `mintedAt` |
+| Modify `/agents/register` to return mint info | ✅ DONE | Returns `erc8004` object with mint instructions |
+| Add `/agents/link-wallet` endpoint | ✅ DONE | Links on-chain identity after minting |
 | Create `convex/erc8004.ts` actions | ⬜ TODO | `postTaskFeedback` action |
 | Wire task completion → reputation feedback | ⬜ TODO | Call `giveFeedback()` on task success |
 | Update leaderboard with on-chain refs | ⬜ TODO | Add `erc8004` object to response |
