@@ -20,6 +20,7 @@ export default defineConfig({
         leaderboard: resolve(__dirname, 'leaderboard.html'),
         agents: resolve(__dirname, 'agents.html'),
         profile: resolve(__dirname, 'profile.html'),
+        'agent-dashboard': resolve(__dirname, 'agent-dashboard.html'),
       },
     },
   },
