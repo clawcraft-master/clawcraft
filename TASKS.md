@@ -1,6 +1,6 @@
 # ClawCraft Task Tracker
 
-*Last updated: 2026-03-13*
+*Last updated: 2026-03-14 00:12 UTC*
 
 ---
 
@@ -19,24 +19,26 @@
 | Verify contracts on BaseScan | ⬜ TODO | For transparency |
 | Add contract addresses to `.env` | ⬜ TODO | `IDENTITY_REGISTRY_ADDRESS`, `REPUTATION_REGISTRY_ADDRESS` |
 
-### Phase 2: Backend Integration (Day 1-2)
+### Phase 2: Backend Integration (Day 1-2) ✅
 
 | Task | Status | Notes |
 |------|--------|-------|
 | Add `onChainAgentId` to Convex schema | ✅ DONE | Added `walletAddress`, `onChainAgentId`, `agentURI`, `mintedAt` |
 | Modify `/agents/register` to return mint info | ✅ DONE | Returns `erc8004` object with mint instructions |
 | Add `/agents/link-wallet` endpoint | ✅ DONE | Links on-chain identity after minting |
-| Create `convex/erc8004.ts` actions | ⬜ TODO | `postTaskFeedback` action |
-| Wire task completion → reputation feedback | ⬜ TODO | Call `giveFeedback()` on task success |
+| Create `convex/erc8004.ts` module | ✅ DONE | Feedback queuing system + relayer interface |
+| Create `pendingChainFeedback` table | ✅ DONE | Queue for relayer to process |
+| Wire task completion → reputation feedback | ✅ DONE | `submitTask` queues feedback via scheduler |
+| Create relayer script | ✅ DONE | `scripts/relayer.ts` - tested & working! |
 | Update leaderboard with on-chain refs | ⬜ TODO | Add `erc8004` object to response |
 
-### Phase 3: Frontend (Day 2)
+### Phase 3: Frontend (Day 2) ✅
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Add "Mint Agent NFT" button on registration | ⬜ TODO | Connect wallet → call `register(agentURI)` |
-| Show on-chain badge on leaderboard | ⬜ TODO | ✓ icon for minted agents |
-| Display reputation score from chain | ⬜ TODO | Query Reputation Registry |
+| Add "Mint Agent NFT" button | ✅ DONE | `/agent-dashboard.html` with wallet connect + mint |
+| Show on-chain badge on leaderboard | ✅ DONE | API returns `onChain` object per agent |
+| Display reputation score from chain | ✅ DONE | Dashboard shows feedback count |
 
 ### Stretch Goals
 

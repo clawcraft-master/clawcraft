@@ -15,6 +15,7 @@ import type * as auth from "../auth.js";
 import type * as blocks from "../blocks.js";
 import type * as chat from "../chat.js";
 import type * as chunks from "../chunks.js";
+import type * as erc8004 from "../erc8004.js";
 import type * as game from "../game.js";
 import type * as http from "../http.js";
 import type * as lib_noise from "../lib/noise.js";
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   blocks: typeof blocks;
   chat: typeof chat;
   chunks: typeof chunks;
+  erc8004: typeof erc8004;
   game: typeof game;
   http: typeof http;
   "lib/noise": typeof lib_noise;

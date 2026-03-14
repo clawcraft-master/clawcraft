@@ -84,6 +84,10 @@ export const list = query({
       lastSeen: a.lastSeen,
       position: a.position,
       stats: a.stats,
+      // ERC-8004 on-chain identity
+      onChainAgentId: a.onChainAgentId,
+      walletAddress: a.walletAddress,
+      mintedAt: a.mintedAt,
     }));
   },
 });

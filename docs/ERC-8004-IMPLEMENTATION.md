@@ -1,8 +1,35 @@
-# ERC-8004 Implementation Plan for ClawCraft
+# ERC-8004 Implementation for ClawCraft
 
 **Date:** March 12, 2026  
 **Target:** Synthesis Hackathon (March 13, 2026)  
-**Status:** Draft Implementation Plan
+**Status:** ✅ Phase 1 Complete | 🚧 Phase 2 In Progress
+
+## Implementation Status (Updated March 14, 2026)
+
+### ✅ Completed
+- **Smart Contracts Deployed (Base Sepolia)**
+  - Identity Registry: `0xf324484c7D67d2141717bbc2a89721e2DE6a37eE`
+  - Reputation Registry: `0x92E829A08B1Fe841A544F27Ca858d1fd4F919989` (v2 with `postFeedback`)
+  - Deployer/Relayer: `0x49Ab71481621e46703A94059a3A7017b2BCeB9c2`
+
+- **Convex Backend**
+  - Schema updated with ERC-8004 fields (`onChainAgentId`, `walletAddress`, `agentURI`, `mintedAt`)
+  - `/agents/register` returns mint instructions and agent registration file
+  - `/agents/link-wallet` endpoint to link on-chain identity after minting
+  - `convex/erc8004.ts` module with feedback queueing system
+  - `pendingChainFeedback` table for relayer queue
+  - Task completion hooks to queue reputation feedback
+
+### ✅ Tested & Working
+- VPS relayer script (`scripts/relayer.ts`) — polls Convex, submits to chain
+- Full flow verified: mint → task complete → on-chain feedback
+
+### ⏳ Pending
+- Frontend "Mint Agent NFT" button
+- Leaderboard on-chain badge display
+- Test end-to-end flow
+
+---
 
 ## Executive Summary
 

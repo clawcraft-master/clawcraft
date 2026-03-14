@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 
 // ============ TASK DEFINITIONS ============
 // These are the benchmark tasks agents can attempt
@@ -549,6 +550,16 @@ export const getActiveAttempt = query({
   },
 });
 
+// Get all completions for an agent
+export const getAgentCompletions = query({
+  args: { agentId: v.id("agents") },
+  handler: async (ctx, args) => {
+    return await ctx.db.query("taskCompletions")
+      .withIndex("by_agent", (q) => q.eq("agentId", args.agentId))
+      .collect();
+  },
+});
+
 // ============ LEADERBOARD ============
 
 export const getLeaderboard = query({
@@ -559,24 +570,40 @@ export const getLeaderboard = query({
   handler: async (ctx, args) => {
     const limit = args.limit ?? 20;
     
+    // Helper to get on-chain info for an agent
+    const getOnChainInfo = async (agentId: string) => {
+      const agent = await ctx.db.get(agentId as any);
+      if (!agent?.onChainAgentId) return null;
+      return {
+        agentId: agent.onChainAgentId,
+        wallet: agent.walletAddress,
+        mintedAt: agent.mintedAt,
+      };
+    };
+
     // If specific task, get top scores for that task
     if (args.taskId) {
       const completions = await ctx.db.query("taskCompletions")
         .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
         .collect();
       
-      return completions
+      const sorted = completions
         .sort((a, b) => b.score - a.score)
-        .slice(0, limit)
-        .map((c, i) => ({
-          rank: i + 1,
-          agentId: c.agentId,
-          agentName: c.agentName,
-          score: c.score,
-          taskId: c.taskId,
-          completedAt: c.completedAt,
-          timeMs: c.timeMs,
-        }));
+        .slice(0, limit);
+      
+      // Enrich with on-chain data
+      const enriched = await Promise.all(sorted.map(async (c, i) => ({
+        rank: i + 1,
+        agentId: c.agentId,
+        agentName: c.agentName,
+        score: c.score,
+        taskId: c.taskId,
+        completedAt: c.completedAt,
+        timeMs: c.timeMs,
+        onChain: await getOnChainInfo(c.agentId),
+      })));
+      
+      return enriched;
     }
     
     // Global leaderboard: aggregate scores per agent
@@ -598,13 +625,18 @@ export const getLeaderboard = query({
       agentScores[key].tasksCompleted += 1;
     }
     
-    return Object.values(agentScores)
+    const sorted = Object.values(agentScores)
       .sort((a, b) => b.totalScore - a.totalScore)
-      .slice(0, limit)
-      .map((a, i) => ({
-        rank: i + 1,
-        ...a,
-      }));
+      .slice(0, limit);
+    
+    // Enrich with on-chain data
+    const enriched = await Promise.all(sorted.map(async (a, i) => ({
+      rank: i + 1,
+      ...a,
+      onChain: await getOnChainInfo(a.agentId),
+    })));
+    
+    return enriched;
   },
 });
 
@@ -751,6 +783,17 @@ export const submitTask = mutation({
         timeMs,
         completedAt: Date.now(),
         details: args.details,
+      });
+    }
+    
+    // Queue ERC-8004 on-chain feedback if agent has minted
+    if (agent.onChainAgentId) {
+      await ctx.scheduler.runAfter(0, internal.erc8004.queueTaskFeedback, {
+        onChainAgentId: agent.onChainAgentId,
+        taskId: args.taskId,
+        taskTitle: task.title,
+        score,
+        timeMs,
       });
     }
     

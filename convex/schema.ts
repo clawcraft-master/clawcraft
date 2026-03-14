@@ -204,4 +204,22 @@ export default defineSchema({
     .index("by_pos", ["posKey"])
     .index("by_agent", ["agentId"])
     .index("by_location", ["x", "y", "z"]),
+
+  // ERC-8004 pending on-chain feedback (processed by relayer)
+  pendingChainFeedback: defineTable({
+    onChainAgentId: v.number(),        // Agent's NFT token ID
+    feedbackType: v.string(),          // e.g., "task_complete", "achievement"
+    metadata: v.string(),              // JSON metadata
+    status: v.union(
+      v.literal("pending"),
+      v.literal("submitted"),
+      v.literal("confirmed"),
+      v.literal("failed")
+    ),
+    createdAt: v.number(),
+    txHash: v.optional(v.string()),    // Set when submitted
+    error: v.optional(v.string()),     // Set on failure
+  })
+    .index("by_status", ["status"])
+    .index("by_agent", ["onChainAgentId"]),
 });

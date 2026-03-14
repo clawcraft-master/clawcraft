@@ -15,16 +15,19 @@
     "build:client": "npm run build -w @clawcraft/shared && npm run build -w @clawcraft/client",
     "lint": "npm run --workspaces --if-present lint",
     "typecheck": "npm run --workspaces --if-present typecheck",
-    "clean": "npm run --workspaces --if-present clean"
+    "clean": "npm run --workspaces --if-present clean",
+    "relayer": "npx tsx scripts/relayer.ts"
   },
   "dependencies": {
-    "convex": "^1.31.7"
+    "convex": "^1.31.7",
+    "ethers": "^6.13.4"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^7.0.0",
     "@openzeppelin/contracts": "^5.6.1",
     "@types/three": "^0.161.2",
     "hardhat": "^2.28.6",
+    "tsx": "^4.19.0",
     "typescript": "^5.3.3",
     "vite": "^7.3.1"
   },

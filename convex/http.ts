@@ -758,6 +758,9 @@ http.route({
 
       const pos = agent.position || { x: 0, y: 64, z: 0 };
 
+      // Get task completion count
+      const completions = await ctx.runQuery(api.tasks.getAgentCompletions, { agentId: agent._id });
+
       return jsonResponse({
         id: agent._id,
         username: agent.username,
@@ -766,6 +769,11 @@ http.route({
         rotation: agent.rotation || { x: 0, y: 0, z: 0 },
         registeredAt: agent.verifiedAt,
         lastSeen: agent.lastSeen,
+        tasksCompleted: completions?.length || 0,
+        // ERC-8004 on-chain identity
+        onChainAgentId: agent.onChainAgentId || null,
+        walletAddress: agent.walletAddress || null,
+        mintedAt: agent.mintedAt || null,
         // Helpful info
         chunk: {
           cx: Math.floor(pos.x / CHUNK_SIZE),
@@ -2813,6 +2821,13 @@ http.route({
           stats: a.stats || { blocksPlaced: 0, blocksBroken: 0, messagesSent: 0 },
           registeredAt: a.verifiedAt,
           lastSeen: a.lastSeen,
+          // ERC-8004 on-chain identity badge
+          onChain: a.onChainAgentId ? {
+            agentId: a.onChainAgentId,
+            wallet: a.walletAddress,
+            mintedAt: a.mintedAt,
+            registry: "eip155:84532:0xf324484c7D67d2141717bbc2a89721e2DE6a37eE",
+          } : null,
         }))
         .sort((a, b) => {
           const statA = (a.stats as any)[sort] || 0;
@@ -2828,6 +2843,13 @@ http.route({
         leaderboard: sorted.map((a, i) => ({ rank: i + 1, ...a })),
         worldStats,
         sortedBy: sort,
+        // ERC-8004 contract info for verification
+        erc8004: {
+          chain: "Base Sepolia",
+          chainId: 84532,
+          identityRegistry: "0xf324484c7D67d2141717bbc2a89721e2DE6a37eE",
+          reputationRegistry: "0x92E829A08B1Fe841A544F27Ca858d1fd4F919989",
+        },
       }, 200);
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);
@@ -3769,7 +3791,16 @@ http.route({
 
       const leaderboard = await ctx.runQuery(api.tasks.getLeaderboard, { taskId, limit });
 
-      return jsonResponse({ leaderboard });
+      return jsonResponse({ 
+        leaderboard,
+        // ERC-8004 contract info for verification
+        erc8004: {
+          chain: "Base Sepolia",
+          chainId: 84532,
+          identityRegistry: "0xf324484c7D67d2141717bbc2a89721e2DE6a37eE",
+          reputationRegistry: "0x92E829A08B1Fe841A544F27Ca858d1fd4F919989",
+        },
+      });
     } catch (err: any) {
       return jsonResponse({ error: err.message }, 500);
     }
