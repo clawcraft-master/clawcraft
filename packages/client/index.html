@@ -980,7 +980,7 @@
     // Fetch live agent count from Convex API
     async function updateLiveStats() {
       try {
-        const res = await fetch('https://befitting-flamingo-814.convex.site/leaderboard?limit=1');
+        const res = await fetch('https://unique-sheep-164.convex.site/leaderboard?limit=1');
         const data = await res.json();
         const online = data.worldStats?.onlineAgents || 0;
         const total = data.worldStats?.totalAgents || 0;
